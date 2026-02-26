@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+flask
+flask-cors
+pandas
+numpy
+scikit-learn
+scipy
+tensorflow>=2.12
+yfinance
+joblib
+statsmodels
+xgboost>=1.7.0
+prophet>=1.1.0

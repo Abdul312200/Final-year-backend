@@ -1,0 +1,59 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: fintechiq
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    ports:
+      - "3306:3306"
+
+  ml:
+    build: ./ml
+    container_name: fintech-ml
+    volumes:
+      - ./ml:/app
+      - ./ml/models:/app/models
+    environment:
+      - FLASK_ENV=production
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+
+  backend:
+    build: ./server
+    container_name: fintech-backend
+    volumes:
+      - ./server:/app
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASS=example
+      - DB_NAME=fintechiq
+      - ML_SERVICE=http://ml:8000
+      - PORT=5000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mysql
+      - ml
+
+  client:
+    build: ./client
+    container_name: fintech-client
+    volumes:
+      - ./client:/app
+    environment:
+      - REACT_APP_API=http://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  mysql-data:

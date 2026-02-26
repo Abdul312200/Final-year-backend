@@ -1,0 +1,329 @@
+{
+  "metric": "rmse",
+  "seq_len": 60,
+  "test_ratio": 0.2,
+  "results": {
+    "AAPL": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 9.611708745002634,
+          "mape": 3.136744775128949,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 15.903633038032128,
+          "mape": 5.9465106678611175,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 27.713709027177586,
+          "mape": 10.715645751821,
+          "n_test": 252
+        }
+      ]
+    },
+    "TSLA": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 25.991540474302067,
+          "mape": 5.917510868655364,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 41.31607196065418,
+          "mape": 9.695735881337932,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 77.66340760349891,
+          "mape": 21.608931689093517,
+          "n_test": 252
+        }
+      ]
+    },
+    "MSFT": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 14.824128733112389,
+          "mape": 2.542504701688996,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 28.064451333212794,
+          "mape": 4.715482930598813,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 56.70131414204953,
+          "mape": 11.147467846386213,
+          "n_test": 252
+        }
+      ]
+    },
+    "GOOGL": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 14.389885061275717,
+          "mape": 5.211125813183116,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 15.870289013877903,
+          "mape": 5.854556999189807,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 65.49365429126756,
+          "mape": 20.507239963736428,
+          "n_test": 252
+        }
+      ]
+    },
+    "AMZN": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 10.353241913700419,
+          "mape": 3.914684847296164,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 24.01207794871623,
+          "mape": 10.17951173385922,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 25.580192205745888,
+          "mape": 9.736726514367147,
+          "n_test": 252
+        }
+      ]
+    },
+    "META": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 40.7266249115783,
+          "mape": 5.197444058721012,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 67.74556518739094,
+          "mape": 8.69905891893414,
+          "n_test": 252
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 101.16699826912073,
+          "mape": 13.483621957904798,
+          "n_test": 240
+        }
+      ]
+    },
+    "NFLX": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 4.992475016965705,
+          "mape": 3.7511484902678487,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 6.750680519002899,
+          "mape": 4.806715062765332,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 17.529065293783383,
+          "mape": 12.883738280507476,
+          "n_test": 252
+        }
+      ]
+    },
+    "NVDA": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 9.02276943250506,
+          "mape": 4.984286618390608,
+          "n_test": 240
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 30.619043088641714,
+          "mape": 17.84588786204763,
+          "n_test": 240
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 42.51958749205767,
+          "mape": 21.817547118808196,
+          "n_test": 252
+        }
+      ]
+    },
+    "TCS.NS": {
+      "best": "ann",
+      "scores": [
+        {
+          "algorithm": "ann",
+          "rmse": 89.79174452823281,
+          "mape": 2.30781777104748,
+          "n_test": 236
+        },
+        {
+          "algorithm": "lstm",
+          "rmse": 89.85505978939463,
+          "mape": 2.0843501553651613,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 788.4761205697043,
+          "mape": 23.98800853014453,
+          "n_test": 248
+        }
+      ]
+    },
+    "INFY.NS": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 45.90347141381928,
+          "mape": 2.428963358663475,
+          "n_test": 236
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 57.470985515145095,
+          "mape": 3.1563454499490238,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 295.21030666745463,
+          "mape": 18.382029253436947,
+          "n_test": 248
+        }
+      ]
+    },
+    "HDFCBANK.NS": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 20.68971918143526,
+          "mape": 1.6865932424726888,
+          "n_test": 236
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 23.495756918426128,
+          "mape": 1.9617362442630164,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 124.36877062156802,
+          "mape": 11.646352313634447,
+          "n_test": 248
+        }
+      ]
+    },
+    "RELIANCE.NS": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 46.01108328061552,
+          "mape": 2.60177775726433,
+          "n_test": 236
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 127.78277827160053,
+          "mape": 8.450929602099327,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 178.15180272711436,
+          "mape": 10.699876630597874,
+          "n_test": 248
+        }
+      ]
+    },
+    "SBIN.NS": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 32.924353138955226,
+          "mape": 3.260715306583174,
+          "n_test": 236
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 51.121996828418844,
+          "mape": 5.275678181151484,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 131.34880744783018,
+          "mape": 10.996649480533025,
+          "n_test": 248
+        }
+      ]
+    },
+    "ICICIBANK.NS": {
+      "best": "lstm",
+      "scores": [
+        {
+          "algorithm": "lstm",
+          "rmse": 35.91500504513894,
+          "mape": 1.937285017193579,
+          "n_test": 236
+        },
+        {
+          "algorithm": "ann",
+          "rmse": 84.86944780978793,
+          "mape": 5.260759843521699,
+          "n_test": 236
+        },
+        {
+          "algorithm": "arima",
+          "rmse": 145.18797361354729,
+          "mape": 9.518047502545466,
+          "n_test": 248
+        }
+      ]
+    }
+  }
+}
