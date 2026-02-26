@@ -1,0 +1,30 @@
+services:
+  # ── ML Service (FastAPI / Python) ────────────────────────────
+  - type: web
+    name: final-year-backend-2
+    runtime: python
+    rootDir: project/ml
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+
+  # ── Node.js Backend (Express) ────────────────────────────────
+  - type: web
+    name: final-year-backend-1
+    runtime: node
+    rootDir: project/server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20.0.0
+      - key: ML_SERVICE
+        value: https://final-year-backend-2.onrender.com
+      - key: ALPHA_API
+        value: VH8S26GRAKQ9UPTL
+      - key: GEMINI_API_KEY
+        sync: false          # set this manually in Render dashboard (keep it secret)
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
