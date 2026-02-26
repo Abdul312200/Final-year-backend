@@ -7,6 +7,14 @@ import os
 app = Flask(__name__)
 CORS(app)
 
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({'status': 'ok', 'service': 'FinTechIQ ML Service', 'endpoints': ['/predict', '/health']})
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'healthy'})
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
