@@ -43,17 +43,5 @@ services:
       - mysql
       - ml
 
-  client:
-    build: ./client
-    container_name: fintech-client
-    volumes:
-      - ./client:/app
-    environment:
-      - REACT_APP_API=http://localhost:5000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
 volumes:
   mysql-data:
