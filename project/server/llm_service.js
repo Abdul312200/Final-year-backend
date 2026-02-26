@@ -175,14 +175,20 @@ async function ensureOllamaModel(modelName = OLLAMA_MODEL) {
   }
 }
 
-// ─── Main Entry — Gemini first, Ollama fallback ───────────────────────────────────
+// ─── Main Entry — Gemini first, Ollama fallback, static fallback ─────────────────
 async function askLLM({ userMessage, conversationHistory = [], lang = 'en' }) {
   const geminiResult = await askGemini({ userMessage, conversationHistory, lang });
   if (geminiResult.success) return geminiResult;
   console.log(`Gemini failed (${geminiResult.reason}), trying Ollama...`);
   const ollamaResult = await askOllama({ userMessage, conversationHistory, lang });
   if (ollamaResult.success) return ollamaResult;
-  return { success: false, reason: 'all_llm_failed', text: null };
+
+  // Static intelligent fallback when all LLMs are unavailable
+  const staticReply = lang === 'ta'
+    ? `📊 FinTechIQ AI உதவியாளர் இங்கே!\n\nதற்போது AI சேவை கிடைக்கவில்லை. நேரடி கட்டளைகளை பயன்படுத்தவும்:\n\n📈 முன்னறிவிப்பு: "predict AAPL"\n📊 பகுப்பாய்வு: "analyze TCS"\n💰 விலை: "RELIANCE price"\n⚖️ ஒப்பீடு: "compare AAPL vs MSFT"\n\n⚠️ இது நிதி ஆலோசனை அல்ல.`
+    : `📊 FinTechIQ AI Assistant here!\n\nAI service is temporarily unavailable. Use direct commands:\n\n📈 Prediction: "predict AAPL"\n📊 Analysis: "analyze TCS"\n💰 Price: "RELIANCE price"\n⚖️ Compare: "compare AAPL vs MSFT"\n📋 Models: "available models"\n\n⚠️ Not financial advice. Consult a SEBI-registered advisor.`;
+
+  return { success: true, text: staticReply, source: 'static', model: 'fallback' };
 }
 
 async function getLLMStatus() {

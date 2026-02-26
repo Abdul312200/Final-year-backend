@@ -426,8 +426,8 @@ app.get("/api/price/:ticker", async (req, res) => {
       finalSymbol = symbol + ".NS";
     }
 
-    // Call Python price service
-    const url = `http://127.0.0.1:5001/price/${finalSymbol}`;
+    // Call ML service price endpoint
+    const url = `${ML_SERVICE}/price/${finalSymbol}`;
     const response = await axios.get(url);
 
     if (!response.data.price) {
@@ -450,7 +450,7 @@ app.get("/api/price/:ticker", async (req, res) => {
 // =================================================
 app.get("/api/gold", async (req, res) => {
   try {
-    const response = await axios.get("http://127.0.0.1:5001/gold");
+    const response = await axios.get(`${ML_SERVICE}/gold`);
     if (response.data.error) {
       return res.status(500).json({ error: response.data.error });
     }
@@ -796,7 +796,7 @@ app.post("/api/chatbot", async (req, res) => {
     if (text.includes("gold") || normalizedLower.includes("gold") ||
         text.includes("thangam") || text.includes("\u0ba4\u0b99\u0bcd\u0b95\u0bae\u0bcd")) {
       try {
-        const goldRes = await axios.get("http://127.0.0.1:5001/gold", { timeout: 10000 });
+        const goldRes = await axios.get(`${ML_SERVICE}/gold`, { timeout: 10000 });
         const gd = goldRes.data;
         if (!gd.error && gd.price) {
           const per_gram_24k = Math.round(gd.price / 10);
@@ -929,7 +929,7 @@ app.post("/api/chatbot", async (req, res) => {
 
       try {
         const response = await axios.get(
-          `http://127.0.0.1:5001/price/${finalSymbol}`
+          `${ML_SERVICE}/price/${finalSymbol}`
         );
 
         if (!response.data || typeof response.data.price !== "number") {

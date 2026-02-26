@@ -27,6 +27,8 @@ const STOCK_KEYWORDS = [
   // Tanglish
   'panju','vilai','vilaiya','mudaleedu','lābam','nattam','sondai','munarruvip',
   'vaangalam','vidalama','buyma','sellma','price sollu','stock sollu',
+  'epdi irukku','epdi iruku','epdi irruku','sollu','pathi','patri','vilarang',
+  'ku epdi','la epdi','stock epdi','share epdi',
 ];
 
 // Tamil/Tanglish greetings and general stock talk that should be allowed
