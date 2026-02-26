@@ -475,6 +475,22 @@ app.get("/api/stocks", async (req, res) => {
 });
 
 // =================================================
+// PREDICT PROXY (direct pass-through to ML service)
+// =================================================
+app.post("/predict", async (req, res) => {
+  try {
+    const response = await axios.post(
+      `${ML_SERVICE}/predict`,
+      req.body
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error("ML /predict error:", error.message);
+    res.status(500).json({ error: "ML API failed" });
+  }
+});
+
+// =================================================
 // MAIN CHATBOT API (FINAL WITH NLP)
 // =================================================
 app.post("/api/chatbot", async (req, res) => {
