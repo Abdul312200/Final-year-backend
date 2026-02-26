@@ -21,7 +21,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ML_SERVICE = process.env.ML_SERVICE || "http://127.0.0.1:8000";
+const ML_SERVICE = process.env.ML_SERVICE || "https://final-year-backend-2.onrender.com";
 
 // =============================
 // STATUS PAGE (browser-friendly)
