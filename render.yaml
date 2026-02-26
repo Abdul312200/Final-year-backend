@@ -5,7 +5,7 @@ services:
     runtime: python
     rootDir: project/ml
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    startCommand: python mock_predict.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
