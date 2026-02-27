@@ -6,7 +6,7 @@ pandas
 numpy
 scikit-learn
 scipy
-tensorflow>=2.12
+tensorflow==2.16.2
 yfinance
 joblib
 statsmodels

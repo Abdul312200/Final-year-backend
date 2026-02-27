@@ -8,7 +8,7 @@ services:
     startCommand: python mock_predict.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: 3.11.9
 
   # ── Node.js Backend (Express) ────────────────────────────────
   - type: web
