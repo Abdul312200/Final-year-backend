@@ -4,7 +4,7 @@ services:
     name: final-year-backend-2
     runtime: python
     rootDir: project/ml
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port 10000
     envVars:
       - key: PYTHON_VERSION
