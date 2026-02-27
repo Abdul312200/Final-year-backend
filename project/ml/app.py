@@ -33,6 +33,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/")
+def health_check():
+    return {"status": "ok", "service": "FinTechIQ ML API"}
+
+
 US_STOCKS = {
     "AAPL", "ADBE", "AMD", "AMZN", "GOOGL", "INTC", "JPM",
     "META", "MSFT", "NFLX", "NVDA", "TSLA", "V", "WMT",
