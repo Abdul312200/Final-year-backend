@@ -258,6 +258,76 @@ def get_models():
     }
 
 
+@app.get("/price/{symbol}")
+def get_price(symbol: str):
+    """Live stock price via yfinance"""
+    try:
+        sym = symbol.upper()
+        if "." not in sym and sym not in US_STOCKS:
+            sym = sym + ".NS"
+        ticker = yf.Ticker(sym)
+        data = ticker.history(period="1d")
+        if data.empty:
+            raise HTTPException(status_code=404, detail=f"No data for {sym}")
+        price = round(float(data["Close"].iloc[-1]), 2)
+        return {
+            "symbol": sym,
+            "price": price,
+            "currency": "INR" if sym.endswith(".NS") else "USD",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/gold")
+def get_gold_price():
+    """Live gold price in INR per 10g via yfinance (GC=F × USDINR=X)"""
+    try:
+        import concurrent.futures
+
+        def fetch_gold_usd():
+            t = yf.Ticker("GC=F")
+            d = t.history(period="1d")
+            if d.empty:
+                raise ValueError("No gold futures data")
+            return float(d["Close"].iloc[-1])
+
+        def fetch_usd_inr():
+            t = yf.Ticker("USDINR=X")
+            d = t.history(period="1d")
+            if d.empty:
+                return 83.5  # fallback rate
+            return float(d["Close"].iloc[-1])
+
+        with concurrent.futures.ThreadPoolExecutor() as ex:
+            f_gold = ex.submit(fetch_gold_usd)
+            f_fx   = ex.submit(fetch_usd_inr)
+            gold_usd = f_gold.result(timeout=10)
+            usd_inr  = f_fx.result(timeout=10)
+
+        TROY_OZ_TO_GRAMS = 31.1035
+        price_inr_per_10g = round((gold_usd * usd_inr / TROY_OZ_TO_GRAMS) * 10)
+
+        chp = None
+        gold_hist = yf.Ticker("GC=F").history(period="5d")
+        if len(gold_hist) >= 2:
+            prev = float(gold_hist["Close"].iloc[-2])
+            curr = float(gold_hist["Close"].iloc[-1])
+            chp = round((curr - prev) / prev * 100, 2)
+
+        return {
+            "price": price_inr_per_10g,
+            "chp": chp,
+            "gold_usd": round(gold_usd, 2),
+            "usd_inr": round(usd_inr, 2),
+            "unit": "INR/10g",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # -------------------- TRAINING -----------------------
 class TrainRequest(BaseModel):
     tickers: List[str]
