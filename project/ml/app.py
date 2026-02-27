@@ -1,3 +1,5 @@
+import os
+import sys
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,23 +9,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 
-from model_toolbox import (
-    DEFAULT_TICKERS,
-    list_available_models,
-    load_best_models,
-    model_artifacts_exist,
-    normalize_symbol,
-    predict_next_close,
-    fetch_close_series,
-)
-
-from train_toolbox import (
-    TrainConfig,
-    train_one,
-    train_many,
-)
-
-app = FastAPI()
+# ── Create app immediately — service is always reachable even if ML deps fail ──
+app = FastAPI(title="FinTechIQ ML API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,10 +20,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# ── Health endpoints registered before any heavy imports ──────────────────
 @app.get("/")
+@app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "FinTechIQ ML API"}
+    return {
+        "status": "ok",
+        "service": "FinTechIQ ML API",
+        "ml_ready": _ml_ready,
+        "ml_error": _ml_error,
+    }
+
+# ── Lazy-load heavy ML dependencies (TensorFlow, Prophet, XGBoost) ────────
+# If they fail (e.g. memory/build limits on free-tier hosting) the service
+# stays up and returns 503 on ML-only endpoints instead of crashing entirely.
+_ml_ready = False
+_ml_error: Optional[str] = None
+
+# Safe defaults so every symbol that references these still compiles
+DEFAULT_TICKERS: list = []
+list_available_models = lambda: {}  # type: ignore
+load_best_models = lambda: {}  # type: ignore
+model_artifacts_exist = lambda *a: False  # type: ignore
+normalize_symbol = lambda s: s  # type: ignore
+predict_next_close = None
+fetch_close_series = None
+TrainConfig = None
+train_one = None
+train_many = None
+
+try:
+    from model_toolbox import (
+        DEFAULT_TICKERS,
+        list_available_models,
+        load_best_models,
+        model_artifacts_exist,
+        normalize_symbol,
+        predict_next_close,
+        fetch_close_series,
+    )
+    from train_toolbox import (
+        TrainConfig,
+        train_one,
+        train_many,
+    )
+    _ml_ready = True
+except Exception as _import_err:
+    _ml_error = str(_import_err)
+    print(f"[WARN] ML toolbox import failed — running in price-only mode: {_import_err}", file=sys.stderr)
 
 
 US_STOCKS = {
@@ -137,6 +168,8 @@ def fix_symbol(symbol: str) -> str:
 # -------------------- PREDICTION -----------------------
 @app.post("/predict")
 def predict(data: dict):
+    if not _ml_ready or predict_next_close is None:
+        raise HTTPException(status_code=503, detail=f"ML service unavailable: {_ml_error}")
     ticker = data.get("ticker", "AAPL")
     days = int(data.get("input_days", 60))
     algorithm = (data.get("algorithm") or "lstm").lower()
@@ -360,6 +393,8 @@ def train_all_stocks(req: BulkTrainRequest):
     Train LSTM + ARIMA (or specified algorithms) for all registered stocks.
     Use skip_existing=true to resume interrupted training.
     """
+    if not _ml_ready or train_one is None:
+        raise HTTPException(status_code=503, detail=f"ML service unavailable: {_ml_error}")
     # Build symbol list based on market filter
     symbols = []
     if req.market in ("us", "all"):
@@ -420,6 +455,8 @@ def train_all_stocks(req: BulkTrainRequest):
 @app.post("/train")
 def train_models(req: TrainRequest):
     """Train models for specified tickers and algorithms"""
+    if not _ml_ready or train_one is None:
+        raise HTTPException(status_code=503, detail=f"ML service unavailable: {_ml_error}")
     try:
         # Normalize symbols
         symbols = [normalize_symbol(t) for t in req.tickers]
