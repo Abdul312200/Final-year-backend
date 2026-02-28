@@ -27,15 +27,17 @@ app.use("/api", goldRoute);
 const ML_SERVICE   = process.env.ML_SERVICE   || "https://final-year-backend-2.onrender.com";
 const LOCAL_ML     = process.env.LOCAL_ML     || "http://127.0.0.1:8000";
 const LOCAL_PRICE  = process.env.LOCAL_PRICE  || "http://127.0.0.1:5001";
+const IS_RENDER    = !!process.env.RENDER_EXTERNAL_URL;   // true when deployed on Render
 
-// ─── ML service helpers: remote first, then local fallback ───────────
-const ML_TIMEOUT = 18000;   // 18 s for remote (Render cold-start)
+// ─── ML service helpers: remote first, then local fallback (local skipped on Render) ───
+const ML_TIMEOUT  = 30000;  // 30 s — generous for Render cold-start
 const LCL_TIMEOUT = 10000;  // 10 s for local
 
 async function mlGet(path) {
   try {
     return await axios.get(`${ML_SERVICE}${path}`, { timeout: ML_TIMEOUT });
-  } catch (_) {
+  } catch (err) {
+    if (IS_RENDER) throw err;   // no localhost on Render — propagate the real error
     return await axios.get(`${LOCAL_ML}${path}`, { timeout: LCL_TIMEOUT });
   }
 }
@@ -43,16 +45,18 @@ async function mlGet(path) {
 async function mlPost(path, body) {
   try {
     return await axios.post(`${ML_SERVICE}${path}`, body, { timeout: ML_TIMEOUT });
-  } catch (_) {
+  } catch (err) {
+    if (IS_RENDER) throw err;   // no localhost on Render — propagate the real error
     return await axios.post(`${LOCAL_ML}${path}`, body, { timeout: LCL_TIMEOUT });
   }
 }
 
 // Fetch a live price: remote ML → local ML → local price micro-service
 async function fetchLivePrice(symbol) {
-  for (const base of [ML_SERVICE, LOCAL_ML, LOCAL_PRICE]) {
+  const bases = IS_RENDER ? [ML_SERVICE] : [ML_SERVICE, LOCAL_ML, LOCAL_PRICE];
+  for (const base of bases) {
     try {
-      const r = await axios.get(`${base}/price/${symbol}`, { timeout: 8000 });
+      const r = await axios.get(`${base}/price/${symbol}`, { timeout: 10000 });
       if (r.data?.price) return r.data;
     } catch (_) { /* try next */ }
   }
@@ -869,16 +873,17 @@ app.post("/api/chatbot", async (req, res) => {
         text.includes("thangam") || text.includes("\u0ba4\u0b99\u0bcd\u0b95\u0bae\u0bcd")) {
       let gd = null;
       // Try chains: remote ML → local ML → local price API → GoldAPI route
-      for (const base of [ML_SERVICE, LOCAL_ML, LOCAL_PRICE]) {
+      for (const base of (IS_RENDER ? [ML_SERVICE] : [ML_SERVICE, LOCAL_ML, LOCAL_PRICE])) {
         try {
           const r = await axios.get(`${base}/gold`, { timeout: 8000 });
           if (r.data?.price) { gd = r.data; break; }
         } catch (_) { /* next */ }
       }
       if (!gd) {
-        // Try our GoldAPI route
+        // Try our own GoldAPI route
         try {
-          const r = await axios.get("http://127.0.0.1:10000/api/gold-price", { timeout: 8000 });
+          const selfBase = process.env.RENDER_EXTERNAL_URL || `http://127.0.0.1:${port}`;
+          const r = await axios.get(`${selfBase}/api/gold-price`, { timeout: 8000 });
           if (r.data?.price) gd = r.data;
         } catch (_) { /* fall through */ }
       }
