@@ -46,6 +46,10 @@ def _safe_load_model(model_path):
     the embedded config.json in-memory to remove the unknown keys, then retries.
     """
     try:
+        import tensorflow as tf
+        # Limit TF memory so it doesn't OOM on low-RAM servers (Render free tier)
+        for gpu in tf.config.list_physical_devices("GPU"):
+            tf.config.experimental.set_memory_growth(gpu, True)
         from tensorflow.keras.models import load_model
     except ImportError:
         from keras.models import load_model  # standalone Keras 3
