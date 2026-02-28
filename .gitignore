@@ -1,0 +1,16 @@
+node_modules/
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+package-lock.json
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+build/
+.DS_Store
+Thumbs.db

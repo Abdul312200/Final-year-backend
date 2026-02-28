@@ -16,12 +16,56 @@ import { detectLanguage, normalizeTanglish, extractSymbolsFromTanglish, getRespo
 import { checkStockGuard } from "./stock_guard.js";
 import { initConversationDB, saveMessage, getConversationHistory, searchFAQ, buildConversationContext, getUserStats } from "./stock_conversation_db.js";
 import { askLLM, getLLMStatus } from "./llm_service.js";
+import goldRoute from "./goldRoute.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ML_SERVICE = process.env.ML_SERVICE || "https://final-year-backend-2.onrender.com";
+app.use("/api", goldRoute);
+
+const ML_SERVICE   = process.env.ML_SERVICE   || "https://final-year-backend-2.onrender.com";
+const LOCAL_ML     = process.env.LOCAL_ML     || "http://127.0.0.1:8000";
+const LOCAL_PRICE  = process.env.LOCAL_PRICE  || "http://127.0.0.1:5001";
+
+// ─── ML service helpers: remote first, then local fallback ───────────
+const ML_TIMEOUT = 18000;   // 18 s for remote (Render cold-start)
+const LCL_TIMEOUT = 10000;  // 10 s for local
+
+async function mlGet(path) {
+  try {
+    return await axios.get(`${ML_SERVICE}${path}`, { timeout: ML_TIMEOUT });
+  } catch (_) {
+    return await axios.get(`${LOCAL_ML}${path}`, { timeout: LCL_TIMEOUT });
+  }
+}
+
+async function mlPost(path, body) {
+  try {
+    return await axios.post(`${ML_SERVICE}${path}`, body, { timeout: ML_TIMEOUT });
+  } catch (_) {
+    return await axios.post(`${LOCAL_ML}${path}`, body, { timeout: LCL_TIMEOUT });
+  }
+}
+
+// Fetch a live price: remote ML → local ML → local price micro-service
+async function fetchLivePrice(symbol) {
+  for (const base of [ML_SERVICE, LOCAL_ML, LOCAL_PRICE]) {
+    try {
+      const r = await axios.get(`${base}/price/${symbol}`, { timeout: 8000 });
+      if (r.data?.price) return r.data;
+    } catch (_) { /* try next */ }
+  }
+  return null;
+}
+
+// Build a basic analysis reply from raw price data when full analysis fails
+function buildBasicAnalysis(symbol, priceData, lang) {
+  const currency = priceData.currency === "INR" ? "₹" : "$";
+  return lang === "ta"
+    ? `${symbol} - அடிப்படை தகவல்:\n💰 தற்போதைய விலை: ${currency}${priceData.price}\n📌 சந்தை: ${priceData.currency === "INR" ? "NSE (India)" : "US Stock"}\n\n⚠️ விரிவான பகுப்பாய்வுக்கு ML சேவை தேவை. உள்ளூர் சேவையகம் இயங்குகிறதா என சரிபார்க்கவும்.`
+    : `${symbol} - Basic Info:\n💰 Current Price: ${currency}${priceData.price}\n📌 Market: ${priceData.currency === "INR" ? "NSE (India)" : "US Market"}\n\n⚠️ Full analysis requires the ML service. Run 'python price_api.py' locally for richer data.`;
+}
 
 // =============================
 // STATUS PAGE (browser-friendly)
@@ -426,17 +470,16 @@ app.get("/api/price/:ticker", async (req, res) => {
       finalSymbol = symbol + ".NS";
     }
 
-    // Call ML service price endpoint
-    const url = `${ML_SERVICE}/price/${finalSymbol}`;
-    const response = await axios.get(url);
+    const priceInfo = await fetchLivePrice(finalSymbol);
 
-    if (!response.data.price) {
-      return res.status(400).json({ error: "Price not available" });
+    if (!priceInfo?.price) {
+      return res.status(400).json({ error: "Price not available for " + finalSymbol });
     }
 
     res.json({
       ticker: symbol,
-      current_price: response.data.price,
+      current_price: priceInfo.price,
+      currency: priceInfo.currency,
       time: new Date().toLocaleString(),
     });
   } catch (err) {
@@ -450,7 +493,7 @@ app.get("/api/price/:ticker", async (req, res) => {
 // =================================================
 app.get("/api/gold", async (req, res) => {
   try {
-    const response = await axios.get(`${ML_SERVICE}/gold`);
+    const response = await mlGet('/gold');
     if (response.data.error) {
       return res.status(500).json({ error: response.data.error });
     }
@@ -466,11 +509,11 @@ app.get("/api/gold", async (req, res) => {
 // =================================================
 app.get("/api/stocks", async (req, res) => {
   try {
-    const r = await axios.get(`${ML_SERVICE}/stocks`);
+    const r = await mlGet('/stocks');
     res.json(r.data);
   } catch (err) {
     console.error("STOCKS API ERROR:", err.message);
-    res.status(503).json({ error: "ML service unavailable" });
+    res.status(503).json({ error: "ML service unavailable — start ml/app.py locally" });
   }
 });
 
@@ -479,14 +522,11 @@ app.get("/api/stocks", async (req, res) => {
 // =================================================
 app.post("/predict", async (req, res) => {
   try {
-    const response = await axios.post(
-      `${ML_SERVICE}/predict`,
-      req.body
-    );
+    const response = await mlPost('/predict', req.body);
     res.json(response.data);
   } catch (error) {
     console.error("ML /predict error:", error.message);
-    res.status(500).json({ error: "ML API failed" });
+    res.status(500).json({ error: "ML API failed — ensure local ML service (ml/app.py) is running" });
   }
 });
 
@@ -556,19 +596,28 @@ app.post("/api/chatbot", async (req, res) => {
     // STOCK PREDICTION (Enhanced with NLP)
     // -----------------------------
     if (detectedIntent === 'predict' || text.match(/predict|prediction|forecast/)) {
+
+      // ── "what stocks can you predict?" ────────────────────────────
+      if (text.match(/what stocks|which stocks|list.*stock|can you predict|how many|available/i) && nlpSymbols.length === 0) {
+        const stockList = lang === "ta"
+          ? `நான் கணிக்கக்கூடிய பங்குகள்:\n\n🇺🇸 அமெரிக்க பங்குகள்:\nAAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, NFLX\nAMD, INTC, JPM, V, MA, BAC, BA, CRM, CSCO\nDIS, JNJ, KO, MCD, NKE, ORCL, PEP, PG, PYPL\n\n🇮🇳 இந்திய பங்குகள்:\nRELIANCE, TCS, INFY, HDFCBANK, ICICIBANK\nWIPRO, LTIM, BAJFINANCE, KOTAKBANK, SBIN\n\n🤖 ஆல்காரிதம்கள்: LSTM, GRU, CNN-LSTM, ANN, ARIMA, XGBoost\n\n"predict AAPL" அல்லது "predict TCS using GRU" என தட்டச்சு செய்யவும்.`
+          : `Stocks I can predict:\n\n🇺🇸 US Stocks:\nAAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, NFLX\nAMD, INTC, JPM, V, MA, BAC, BA, CRM, CSCO\nDIS, JNJ, KO, MCD, NKE, ORCL, PEP, PG, PYPL\n\n🇮🇳 Indian Stocks (NSE):\nRELIANCE, TCS, INFY, HDFCBANK, ICICIBANK\nWIPRO, LTIM, BAJFINANCE, KOTAKBANK, SBIN\n\n🤖 Algorithms: LSTM, GRU, CNN-LSTM, ANN, ARIMA, XGBoost\n\nType "predict AAPL" or "predict TCS using GRU" to get started!`;
+        return res.json({ reply: stockList });
+      }
+
       const symbol = nlpSymbols[0] || session.getContext("lastStock");
       if (!symbol) {
         return res.json({
           reply: lang === "ta"
             ? `📈 எந்த பங்கை கணிக்க வேண்டும்? எ.கா: "predict AAPL" அல்லது "TCS கணிப்பு"`
-            : `📈 Which stock should I predict? e.g. "predict AAPL" or "forecast TCS"`
+            : `📈 Which stock should I predict? e.g. "predict AAPL" or "predict TCS"`
         });
       }
       
       try {
         const requestAlgo = detectedAlgo || "lstm";
         
-        const response = await axios.post(`${ML_SERVICE}/predict`, {
+        const response = await mlPost('/predict', {
           ticker: symbol,
           input_days: 60,
           algorithm: requestAlgo
@@ -576,29 +625,42 @@ app.post("/api/chatbot", async (req, res) => {
 
         const { ticker, predicted_price, current_price, algorithm } = response.data;
         const change = ((predicted_price - current_price) / current_price * 100).toFixed(2);
-        const direction = change > 0 ? "increase" : "decrease";
+        const direction = parseFloat(change) > 0 ? "📈 increase" : "📉 decrease";
+        const currency = symbol.includes(".NS") ? "₹" : "$";
 
         session.setContext("lastStock", symbol);
         const suggestions = generateSuggestions(nlpContext, lang);
 
         const reply = lang === "ta"
-            ? `${ticker} பங்கு முன்னறிவிப்பு:\n📊 தற்போதைய விலை: ₹${current_price}\n🎯 கணிக்கப்பட்ட விலை: ₹${predicted_price}\n📈 மாற்றம்: ${Math.abs(change)}% ${direction}\n🤖 மாடல்: ${algorithm.toUpperCase()}\n⚠️ இது நிதி ஆலோசனை அல்ல.`
-            : `Stock Prediction for ${ticker}:\n📊 Current Price: ₹${current_price}\n🎯 Predicted Price: ₹${predicted_price}\n📈 Change: ${change}% ${direction}\n🤖 Model: ${algorithm.toUpperCase()}\n⚠️ Not financial advice.`;
+            ? `${ticker} பங்கு முன்னறிவிப்பு:\n📊 தற்போதைய விலை: ${currency}${current_price}\n🎯 கணிக்கப்பட்ட விலை: ${currency}${predicted_price}\n📈 மாற்றம்: ${Math.abs(change)}% ${direction}\n🤖 மாடல்: ${algorithm.toUpperCase()}\n⚠️ இது நிதி ஆலோசனை அல்ல.`
+            : `Stock Prediction for ${ticker}:\n📊 Current Price: ${currency}${current_price}\n🎯 Predicted Price: ${currency}${predicted_price}\n📈 Change: ${change}% ${direction}\n🤖 Model: ${algorithm.toUpperCase()}\n⚠️ Not financial advice.`;
 
         await saveMessage({ userId, role: 'bot', message: reply, language: lang, intent: 'predict', stockSymbol: ticker }).catch(() => {});
         return res.json({ reply, suggestion: suggestions[0] });
       } catch (err) {
-        const errorMsg = err?.response?.data?.detail || "Prediction failed";
+        console.error("Predict error:", err.message);
+        const detail = err?.response?.data?.detail || "";
+
+        // Fallback: show live price even when prediction model is down
+        const priceData = await fetchLivePrice(symbol);
+        if (priceData?.price) {
+          const currency = priceData.currency === "INR" ? "₹" : "$";
+          const fallbackReply = lang === "ta"
+            ? `${symbol} ML முன்னறிவிப்பு தற்காலிகமாக கிடைக்கவில்லை.\n\n💰 நேரடி விலை: ${currency}${priceData.price}\n\nML சேவை இயங்கும்போது முன்னறிவிப்பு கிடைக்கும்.\nதற்போது: "analyze ${symbol}" என தட்டச்சு செய்யவும்.`
+            : `ML prediction for ${symbol} is temporarily unavailable.\n\n💰 Live Price: ${currency}${priceData.price}\n\nPrediction will work when the ML service is running.\nFor now, try: "analyze ${symbol}"`;
+          return res.json({ reply: fallbackReply });
+        }
+
+        const errorMsg = detail || err.message || "ML service unavailable";
         return res.json({
           reply: lang === "ta"
-            ? `முன்னறிவிப்பு தோல்வி: ${errorMsg}`
-            : `Prediction failed: ${errorMsg}`,
-          suggestion: lang === "ta"
-            ? "மாடலை பயிற்றுவிக்க முயற்சிக்கவும்: 'train AAPL model'"
-            : "Try training the model: 'train AAPL model'"
+            ? `முன்னறிவிப்பு தோல்வி: ${errorMsg}\n\nML சேவை கிடைக்க சிறிது நேரம் ஆகலாம். பின்னர் மீண்டும் முயற்சிக்கவும்.`
+            : `Prediction unavailable: ${errorMsg}\n\nThe ML service may be starting up. Please try again in a moment.`,
+          suggestion: lang === "ta" ? `${symbol} பகுப்பாய்வு முயற்சிக்கவும்: "analyze ${symbol}"` : `Try analyzing instead: "analyze ${symbol}"`
         });
       }
     }
+
 
     // -----------------------------
     // GENERAL INVEST / FINANCE QUESTION  (no specific symbol)
@@ -647,22 +709,32 @@ app.post("/api/chatbot", async (req, res) => {
       session.setContext("lastStock", symbol);
 
       try {
-        const response = await axios.get(`${ML_SERVICE}/analyze/${symbol}`);
+        const response = await mlGet(`/analyze/${symbol}`);
         const data = response.data;
 
+        const currency = symbol.includes(".NS") ? "₹" : "$";
         const suggestions = generateSuggestions(nlpContext, lang);
 
+        const changeDir = data.price_change_pct_1d >= 0 ? "▲" : "▼";
         const reply = lang === "ta"
-            ? `${data.company_name} (${data.symbol}) பகுப்பாய்வு:\n💰 தற்போதைய விலை: ₹${data.current_price}\n📊 1-நாள் மாற்றம்: ${data.price_change_pct_1d}%\n📈 52-வார உயர்வு: ₹${data.high_52w}\n📉 52-வார குறைவு: ₹${data.low_52w}\n📐 MA(20): ₹${data.ma_20}\n📐 MA(50): ₹${data.ma_50}\n⚡ மாறுபாடு: ${data.volatility}%`
-            : `Analysis for ${data.company_name} (${data.symbol}):\n💰 Current Price: ₹${data.current_price}\n📊 1-Day Change: ${data.price_change_pct_1d}%\n📈 52w High: ₹${data.high_52w}\n📉 52w Low: ₹${data.low_52w}\n📐 MA(20): ₹${data.ma_20}\n📐 MA(50): ₹${data.ma_50}\n⚡ Volatility: ${data.volatility}%`;
+            ? `${data.company_name} (${data.symbol}) பகுப்பாய்வு:\n💰 தற்போதைய விலை: ${currency}${data.current_price}\n${changeDir} 1-நாள் மாற்றம்: ${data.price_change_pct_1d}%\n📈 52-வார உயர்வு: ${currency}${data.high_52w}\n📉 52-வார குறைவு: ${currency}${data.low_52w}\n📐 MA(20): ${currency}${data.ma_20}\n📐 MA(50): ${currency}${data.ma_50}\n⚡ மாறுபாடு: ${data.volatility}%\n${data.pe_ratio ? `📌 P/E விகிதம்: ${data.pe_ratio.toFixed(2)}` : ""}\n⚠️ இது நிதி ஆலோசனை அல்ல.`
+            : `Analysis for ${data.company_name} (${data.symbol}):\n💰 Current Price: ${currency}${data.current_price}\n${changeDir} 1-Day Change: ${data.price_change_pct_1d}%\n📈 52w High: ${currency}${data.high_52w}\n📉 52w Low: ${currency}${data.low_52w}\n📐 MA(20): ${currency}${data.ma_20}\n📐 MA(50): ${currency}${data.ma_50}\n⚡ Volatility: ${data.volatility}%\n${data.pe_ratio ? `📌 P/E Ratio: ${data.pe_ratio.toFixed(2)}` : ""}\n⚠️ Not financial advice.`;
 
         await saveMessage({ userId, role: 'bot', message: reply, language: lang, intent: 'analyze', stockSymbol: symbol }).catch(() => {});
         return res.json({ reply, suggestion: suggestions[0] });
       } catch (err) {
+        console.error("Analyze error:", err.message);
+        // Fallback: at least show live price when full analysis fails
+        const priceData = await fetchLivePrice(symbol);
+        if (priceData?.price) {
+          const fallbackReply = buildBasicAnalysis(symbol, priceData, lang);
+          await saveMessage({ userId, role: 'bot', message: fallbackReply, language: lang, intent: 'analyze', stockSymbol: symbol }).catch(() => {});
+          return res.json({ reply: fallbackReply });
+        }
         return res.json({
           reply: lang === "ta"
-            ? `பகுப்பாய்வு தோல்வி: ${symbol} கண்டுபிடிக்க முடியவில்லை. சரியான சின்னம் பயன்படுத்துங்கள் (எ.கா: TCS, RELIANCE, AAPL).`
-            : `Analysis failed: Could not find data for ${symbol}. Use a valid stock symbol (e.g. TCS, RELIANCE, AAPL).`
+            ? `பகுப்பாய்வு தோல்வி: ${symbol} தகவல் கிடைக்கவில்லை. சரியான சின்னம் பயன்படுத்துங்கள் (எ.கா: TCS, RELIANCE, AAPL, TSLA).`
+            : `Analysis unavailable for ${symbol}. Check that the symbol is valid (e.g. TCS, RELIANCE, AAPL, TSLA).\nThe ML service may be sleeping — please try again in 30 seconds.`
         });
       }
     }
@@ -696,7 +768,7 @@ app.post("/api/chatbot", async (req, res) => {
       try {
         session.setContext("trainingStatus", "in_progress");
         
-        const response = await axios.post(`${ML_SERVICE}/train`, {
+        const response = await mlPost('/train', {
           tickers: symbols,
           algorithms: algorithms,
           epochs: text.includes("quick") ? 3 : 5,
@@ -734,7 +806,7 @@ app.post("/api/chatbot", async (req, res) => {
       }
 
       try {
-        const response = await axios.post(`${ML_SERVICE}/compare`, {
+        const response = await mlPost('/compare', {
           symbols: symbols,
           period: "1y"
         });
@@ -765,7 +837,7 @@ app.post("/api/chatbot", async (req, res) => {
     // -----------------------------
     if (text.includes("available") && text.includes("model")) {
       try {
-        const response = await axios.get(`${ML_SERVICE}/models`);
+        const response = await mlGet('/models');
         const available = response.data.available;
         
         let modelList = "";
@@ -795,10 +867,22 @@ app.post("/api/chatbot", async (req, res) => {
     const normalizedLower = normalizedMessage.toLowerCase();
     if (text.includes("gold") || normalizedLower.includes("gold") ||
         text.includes("thangam") || text.includes("\u0ba4\u0b99\u0bcd\u0b95\u0bae\u0bcd")) {
-      try {
-        const goldRes = await axios.get(`${ML_SERVICE}/gold`, { timeout: 10000 });
-        const gd = goldRes.data;
-        if (!gd.error && gd.price) {
+      let gd = null;
+      // Try chains: remote ML → local ML → local price API → GoldAPI route
+      for (const base of [ML_SERVICE, LOCAL_ML, LOCAL_PRICE]) {
+        try {
+          const r = await axios.get(`${base}/gold`, { timeout: 8000 });
+          if (r.data?.price) { gd = r.data; break; }
+        } catch (_) { /* next */ }
+      }
+      if (!gd) {
+        // Try our GoldAPI route
+        try {
+          const r = await axios.get("http://127.0.0.1:5000/api/gold-price", { timeout: 8000 });
+          if (r.data?.price) gd = r.data;
+        } catch (_) { /* fall through */ }
+      }
+      if (gd) {
           const per_gram_24k = Math.round(gd.price / 10);
           const per_gram_22k = Math.round(per_gram_24k * 0.9167);
           const dir = gd.chp != null ? (gd.chp >= 0 ? `▲ +${gd.chp.toFixed(2)}%` : `▼ ${gd.chp.toFixed(2)}%`) : '';
@@ -807,8 +891,8 @@ app.post("/api/chatbot", async (req, res) => {
               ? `இன்றைய தங்க விலை (இந்தியா) 🥇\n24K: ₹${per_gram_24k.toLocaleString('en-IN')} / கிராம்\n22K: ₹${per_gram_22k.toLocaleString('en-IN')} / கிராம்\n10 கிராம்: ₹${gd.price.toLocaleString('en-IN')} ${dir}\n(நகரம் மற்றும் நகைக்கடைக்கு ஏற்ப விலை மாறலாம்)`
               : `Today's Gold Rate (India) 🥇\n24K: ₹${per_gram_24k.toLocaleString('en-IN')} / gram\n22K: ₹${per_gram_22k.toLocaleString('en-IN')} / gram\n10g price: ₹${gd.price.toLocaleString('en-IN')} ${dir}\n(Rates may vary by city and jeweller)`
           });
-        }
-      } catch (_) { /* fall through to static */ }
+      }
+      // None of the sources returned a valid price
       return res.json({
         reply: lang === "ta"
           ? `இன்றைய தங்க விலை (இந்தியா):\n24K: ₹9,500 / கிராம் (தோராயம்)\n22K: ₹8,700 / கிராம் (தோராயம்)\n(நேரடி விலை கிடைக்கவில்லை)`
@@ -928,20 +1012,18 @@ app.post("/api/chatbot", async (req, res) => {
       }
 
       try {
-        const response = await axios.get(
-          `${ML_SERVICE}/price/${finalSymbol}`
-        );
+        const priceInfo = await fetchLivePrice(finalSymbol);
 
-        if (!response.data || typeof response.data.price !== "number") {
+        if (!priceInfo || typeof priceInfo.price !== "number") {
           throw new Error("Price not available");
         }
 
-        const currency = response.data.currency === "INR" ? "₹" : "$";
+        const currency = priceInfo.currency === "INR" ? "₹" : "$";
         return res.json({
           reply:
             lang === "ta"
-              ? `${symbol} இன் தற்போதைய விலை ${currency}${response.data.price}`
-              : `The current price of ${symbol} is ${currency}${response.data.price}`
+              ? `${symbol} இன் தற்போதைய விலை ${currency}${priceInfo.price}`
+              : `The current price of ${symbol} is ${currency}${priceInfo.price}`
         });
       } catch (priceErr) {
         return res.json({
@@ -1045,7 +1127,7 @@ app.post("/api/predict", async (req, res) => {
   const { ticker, input_days = 60, userId = null } = req.body;
 
   try {
-    const resp = await axios.post(`${ML_SERVICE}/predict`, {
+    const resp = await mlPost('/predict', {
       ticker,
       input_days,
     });
