@@ -1,4 +1,19 @@
 services:
+  # ── Frontend (Vite + React) ───────────────────────────────────
+  - type: web
+    name: fintechiq-frontend
+    runtime: node
+    rootDir: .
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.0.0
+      - key: VITE_API_URL
+        value: https://api.fintechiq.me
+      - key: VITE_ALPHA_API
+        value: VH8S26GRAKQ9UPTL
+
   # ── ML Service (FastAPI / Python) ────────────────────────────
   - type: web
     name: final-year-backend-2
