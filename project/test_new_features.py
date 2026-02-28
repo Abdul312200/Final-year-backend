@@ -8,7 +8,7 @@ import json
 import time
 
 ML_SERVICE = "http://localhost:8000"
-CHATBOT_SERVICE = "http://localhost:5000"
+CHATBOT_SERVICE = "http://localhost:10000"
 
 def test_nlp_processing():
     """Test NLP understanding with various queries"""
@@ -169,7 +169,7 @@ def main():
     
     print("\n⚠️  PREREQUISITES:")
     print("   1. ML Service running on port 8000")
-    print("   2. Node.js server running on port 5000")
+    print("   2. Node.js server running on port 10000")
     print("   3. Some models already trained")
     print("\nPress Enter to continue or Ctrl+C to cancel...")
     input()

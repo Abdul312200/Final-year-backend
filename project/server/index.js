@@ -174,7 +174,7 @@ app.get("/", async (req, res) => {
 
   <div class="section-label">System Status</div>
   <div class="status-card">
-    <div class="s-row"><span>Backend</span><span class="ok">✅ :5000</span></div>
+    <div class="s-row"><span>Backend</span><span class="ok">✅ :10000</span></div>
     <div class="s-row"><span>ML Service</span><span class="ok">✅ :8000</span></div>
     <div class="s-row"><span>Gemini LLM</span><span class="${llmStatus.gemini.available ? 'ok' : 'warn'}">${llmStatus.gemini.status}</span></div>
     <div class="s-row"><span>Ollama</span><span class="${llmStatus.ollama.available ? 'ok' : 'warn'}">${llmStatus.ollama.status}</span></div>
@@ -878,7 +878,7 @@ app.post("/api/chatbot", async (req, res) => {
       if (!gd) {
         // Try our GoldAPI route
         try {
-          const r = await axios.get("http://127.0.0.1:5000/api/gold-price", { timeout: 8000 });
+          const r = await axios.get("http://127.0.0.1:10000/api/gold-price", { timeout: 8000 });
           if (r.data?.price) gd = r.data;
         } catch (_) { /* fall through */ }
       }
@@ -1269,9 +1269,20 @@ app.post("/api/learn/progress", async (req, res) => {
 });
 
 // =============================
+//  ML metrics proxy 
+app.get("/api/metrics", async (req, res) => {
+  try {
+    const r = await mlGet("/metrics");
+    res.json(r.data);
+  } catch (err) {
+    res.status(503).json({ error: "ML service unavailable", detail: err.message });
+  }
+});
+
 // START SERVER
 // =============================
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`Backend listening on http://localhost:${port}`);
+  const publicUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+  console.log(`Backend listening on ${publicUrl}`);
 });

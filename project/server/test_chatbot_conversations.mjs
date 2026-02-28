@@ -3,7 +3,7 @@
  * Tests English, Tamil (Unicode), and Tanglish messages
  */
 
-const BASE_URL = 'http://localhost:5000/api/chatbot';
+const BASE_URL = 'http://localhost:10000/api/chatbot';
 const userId   = 'test_user_001';
 
 // ── colour helpers ────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ async function runTests() {
 async function checkLLMStatus() {
   header('LLM STATUS CHECK');
   try {
-    const res  = await fetch('http://localhost:5000/api/llm-status');
+    const res  = await fetch('http://localhost:10000/api/llm-status');
     const data = await res.json();
     console.log(`\n${c.bold}Gemini:${c.reset}`);
     console.log(`  Status : ${data.gemini?.status}`);

@@ -9,7 +9,7 @@ import time
 
 # Configuration
 ML_SERVICE = "http://localhost:8000"
-SERVER = "http://localhost:5000"
+SERVER = "http://localhost:10000"
 TEST_USER = "test_user_123"
 
 def print_section(title):

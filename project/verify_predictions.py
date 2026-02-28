@@ -7,7 +7,7 @@ import requests
 import json
 
 ML_SERVICE = "http://localhost:8000"
-SERVER = "http://localhost:5000"
+SERVER = "http://localhost:10000"
 
 # Test stocks including BAC from the error screenshot
 test_stocks = [
