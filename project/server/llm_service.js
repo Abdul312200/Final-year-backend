@@ -1,9 +1,10 @@
 /**
- * LLM Service — Gemini Primary + Ollama Fallback
- * Primary:  Google Gemini 1.5 Flash (free tier)
- * Fallback: Ollama local LLM (llama3.2 / mistral)
+ * LLM Service — Gemini Primary + GitHub Models + Ollama Fallback
+ * Primary:   Google Gemini 1.5 Flash (free tier)
+ * Secondary: GitHub Models (OpenAI-compatible endpoint)
+ * Fallback:  Ollama local LLM (llama3.2 / mistral)
  *
- * ⚠️  Set GEMINI_API_KEY in .env with a fresh key (never commit raw keys).
+ * ⚠️ Set fresh API keys in .env (never commit raw keys).
  */
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
@@ -13,6 +14,9 @@ import axios from 'axios';
 // ─── Configuration ──────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL   = process.env.GEMINI_MODEL   || 'gemini-1.5-flash';
+const GITHUB_MODELS_TOKEN = process.env.GITHUB_MODELS_TOKEN || process.env.GITHUB_TOKEN || '';
+const GITHUB_MODELS_ENDPOINT = (process.env.GITHUB_MODELS_ENDPOINT || 'https://models.inference.ai.azure.com').replace(/\/$/, '');
+const GITHUB_MODELS_MODEL = process.env.GITHUB_MODELS_MODEL || 'gpt-4.1-mini';
 const OLLAMA_HOST    = process.env.OLLAMA_HOST    || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL   || 'llama3.2';
 
@@ -70,6 +74,13 @@ function toGeminiHistory(messages) {
   }));
 }
 
+function toOpenAIHistory(messages) {
+  return messages.map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: m.content,
+  }));
+}
+
 async function askGemini({ userMessage, conversationHistory = [], lang = 'en' }) {
   if (!geminiReady) {
     if (!initGemini()) return { success: false, reason: 'gemini_not_configured', text: null };
@@ -99,6 +110,59 @@ async function askGemini({ userMessage, conversationHistory = [], lang = 'en' })
       return { success: false, reason: 'quota_exceeded', text: null };
     }
     console.error('Gemini error:', msg);
+    return { success: false, reason: msg, text: null };
+  }
+}
+
+async function askGitHubModels({ userMessage, conversationHistory = [], lang = 'en' }) {
+  if (!GITHUB_MODELS_TOKEN || GITHUB_MODELS_TOKEN === 'YOUR_NEW_GITHUB_TOKEN_HERE') {
+    return { success: false, reason: 'github_models_not_configured', text: null };
+  }
+
+  const systemPrompt = lang === 'ta' ? SYSTEM_PROMPT_TA : SYSTEM_PROMPT_EN;
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...toOpenAIHistory(conversationHistory.slice(-6)),
+    { role: 'user', content: userMessage },
+  ];
+
+  try {
+    const response = await axios.post(
+      `${GITHUB_MODELS_ENDPOINT}/chat/completions`,
+      {
+        model: GITHUB_MODELS_MODEL,
+        messages,
+        temperature: 0.4,
+        top_p: 0.9,
+        max_tokens: 600,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GITHUB_MODELS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      }
+    );
+
+    const text = response.data?.choices?.[0]?.message?.content;
+    if (!text) {
+      return { success: false, reason: 'github_models_empty_response', text: null };
+    }
+
+    return { success: true, text, model: GITHUB_MODELS_MODEL, source: 'github-models' };
+  } catch (err) {
+    const status = err?.response?.status;
+    const msg = err?.response?.data?.error?.message || err?.message || String(err);
+    if (status === 429 || msg.toLowerCase().includes('rate')) {
+      console.warn('⚠️  GitHub Models rate limited — falling back to Ollama');
+      return { success: false, reason: 'github_models_rate_limited', text: null };
+    }
+    if (status === 401 || status === 403) {
+      console.warn('⚠️  GitHub Models auth failed — check token permissions');
+      return { success: false, reason: 'github_models_auth_failed', text: null };
+    }
+    console.warn('GitHub Models error:', msg);
     return { success: false, reason: msg, text: null };
   }
 }
@@ -175,11 +239,16 @@ async function ensureOllamaModel(modelName = OLLAMA_MODEL) {
   }
 }
 
-// ─── Main Entry — Gemini first, Ollama fallback, static fallback ─────────────────
+// ─── Main Entry — Gemini, then GitHub Models, then Ollama, then static ──────────
 async function askLLM({ userMessage, conversationHistory = [], lang = 'en' }) {
   const geminiResult = await askGemini({ userMessage, conversationHistory, lang });
   if (geminiResult.success) return geminiResult;
-  console.log(`Gemini failed (${geminiResult.reason}), trying Ollama...`);
+
+  console.log(`Gemini failed (${geminiResult.reason}), trying GitHub Models...`);
+  const githubResult = await askGitHubModels({ userMessage, conversationHistory, lang });
+  if (githubResult.success) return githubResult;
+
+  console.log(`GitHub Models failed (${githubResult.reason}), trying Ollama...`);
   const ollamaResult = await askOllama({ userMessage, conversationHistory, lang });
   if (ollamaResult.success) return ollamaResult;
 
@@ -193,13 +262,20 @@ async function askLLM({ userMessage, conversationHistory = [], lang = 'en' }) {
 
 async function getLLMStatus() {
   const geminiOk   = !!(GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_NEW_GEMINI_KEY_HERE');
+  const githubOk   = !!(GITHUB_MODELS_TOKEN && GITHUB_MODELS_TOKEN !== 'YOUR_NEW_GITHUB_TOKEN_HERE');
   const ollamaOk   = await isOllamaAvailable();
   const models     = ollamaOk ? await listOllamaModels() : [];
   const bestOllama = ollamaOk ? await getBestOllamaModel() : null;
   return {
     gemini: { available: geminiOk, model: GEMINI_MODEL, status: geminiOk ? '✅ Configured' : '⚠️  Key not set — add GEMINI_API_KEY to .env' },
+    githubModels: {
+      available: githubOk,
+      model: GITHUB_MODELS_MODEL,
+      endpoint: GITHUB_MODELS_ENDPOINT,
+      status: githubOk ? '✅ Configured' : '⚠️  Token not set — add GITHUB_MODELS_TOKEN to .env',
+    },
     ollama: { available: ollamaOk, models, activeModel: bestOllama, status: ollamaOk ? `✅ Running (${models.length} model(s))` : '⚠️  Not running — run: ollama serve', installGuide: 'https://ollama.ai' },
-    primary: geminiOk ? 'gemini' : ollamaOk ? 'ollama' : 'none',
+    primary: geminiOk ? 'gemini' : githubOk ? 'github-models' : ollamaOk ? 'ollama' : 'none',
   };
 }
 
@@ -209,6 +285,7 @@ initGemini();
 export {
   askLLM,
   askGemini,
+  askGitHubModels,
   askOllama,
   isOllamaAvailable,
   listOllamaModels,

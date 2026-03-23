@@ -181,6 +181,7 @@ app.get("/", async (req, res) => {
     <div class="s-row"><span>Backend</span><span class="ok">✅ :10000</span></div>
     <div class="s-row"><span>ML Service</span><span class="ok">✅ :8000</span></div>
     <div class="s-row"><span>Gemini LLM</span><span class="${llmStatus.gemini.available ? 'ok' : 'warn'}">${llmStatus.gemini.status}</span></div>
+    <div class="s-row"><span>GitHub Models</span><span class="${llmStatus.githubModels?.available ? 'ok' : 'warn'}">${llmStatus.githubModels?.status || '⚠️  Not configured'}</span></div>
     <div class="s-row"><span>Ollama</span><span class="${llmStatus.ollama.available ? 'ok' : 'warn'}">${llmStatus.ollama.status}</span></div>
   </div>
 
