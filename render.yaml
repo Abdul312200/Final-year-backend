@@ -48,7 +48,7 @@ services:
       - key: ML_SERVICE
         value: https://ml.fintechiq.me
       - key: FRONTEND_URL
-        value: https://final-year-backend-3.onrender.com
+        value: https://final-year-backend-2.onrender.com
       - key: ALPHA_API
         value: VH8S26GRAKQ9UPTL
       - key: GEMINI_API_KEY
