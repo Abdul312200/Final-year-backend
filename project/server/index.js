@@ -593,13 +593,13 @@ app.post("/api/chatbot", chatbotLimiter, async (req, res) => {
       : message;
 
     // =============================
-    // STOCK-ONLY GUARD
+    // PERMISSIVE GUARD
+    // Keep the stock guard helper for metadata, but do not block non-stock questions.
+    // The chatbot should answer general questions too.
     // =============================
     const guardResult = checkStockGuard(message, lang);
     if (!guardResult.allowed) {
-      await saveMessage({ userId, role: 'user', message, language: detectedLang, intent: 'blocked' });
-      await saveMessage({ userId, role: 'bot', message: guardResult.message, language: lang, intent: 'blocked' });
-      return res.json({ reply: guardResult.message });
+      console.log("Chatbot permissive mode: allowing non-stock query", { topic: guardResult.topic });
     }
 
     // =============================
