@@ -622,6 +622,28 @@ app.post("/api/chatbot", chatbotLimiter, async (req, res) => {
     const detectedIntent = nlpContext.intent;
     const detectedAlgo = nlpContext.entities?.algorithm?.toLowerCase();
 
+    // -----------------------------
+    // EARLY FINANCE/FAQ CONCEPT ANSWERS
+    // Handles: "SIP என்ன?", "what is RSI", "MACD explain" etc.
+    // -----------------------------
+    const isConceptQuery = (
+      detectedIntent === 'faq' ||
+      text.match(/what is|explain|define|meaning of|how does|what are|enna|yenna|என்ன|என்றால்|அர்த்தம்|விளக்க/i)
+    );
+    const hasFinanceConceptWord = text.match(/\b(rsi|macd|pe ratio|p\/e|ema|sma|bollinger|sip|mutual fund|etf|ipo|dividend|market cap|bull|bear|nse|bse|sensex|nifty)\b|சிப்|மியூச்சுவல்|இடிஎஃப்|ஐபிஓ|பங்கு|சந்தை/i);
+
+    if (isConceptQuery && hasFinanceConceptWord) {
+      const faqResult = await searchFAQ(message, lang);
+      if (faqResult.found) {
+        await saveMessage({ userId, role: 'bot', message: faqResult.answer, language: lang, intent: 'faq' }).catch(() => {});
+        return res.json({
+          reply: faqResult.answer,
+          source: 'faq',
+          suggestion: lang === 'ta' ? 'மேலும் பங்கு கேள்விகள் இருந்தால் கேளுங்கள்!' : 'Ask me more stock/market questions!'
+        });
+      }
+    }
+
     // Save user message to conversation DB
     await saveMessage({
       userId, role: 'user', message,
