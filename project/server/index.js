@@ -17,10 +17,15 @@ import { checkStockGuard } from "./stock_guard.js";
 import { initConversationDB, saveMessage, getConversationHistory, searchFAQ, buildConversationContext, getUserStats } from "./stock_conversation_db.js";
 import { askLLM, getLLMStatus } from "./llm_service.js";
 import goldRoute from "./goldRoute.js";
+import { chatbotLimiter, predictionLimiter, priceLimiter, globalLimiter } from "./rate-limiter.js";
+import { apiQueue, retryWithBackoff, executeBatchRequests } from "./request-queue.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ─── Apply global rate limiter to all routes ─────────────────────────────
+app.use(globalLimiter);
 
 app.use("/api", goldRoute);
 
@@ -28,6 +33,12 @@ const ML_SERVICE   = process.env.ML_SERVICE   || "https://final-year-backend-2.o
 const LOCAL_ML     = process.env.LOCAL_ML     || "http://127.0.0.1:8000";
 const LOCAL_PRICE  = process.env.LOCAL_PRICE  || "http://127.0.0.1:5001";
 const IS_RENDER    = !!process.env.RENDER_EXTERNAL_URL;   // true when deployed on Render
+
+const US_STOCKS = new Set([
+  "AAPL", "ADBE", "AMD", "AMZN", "BA", "BAC", "CRM", "CSCO", "DIS", "GOOGL",
+  "INTC", "JNJ", "JPM", "KO", "MA", "MCD", "META", "MSFT", "NFLX", "NKE",
+  "NVDA", "ORCL", "PEP", "PG", "PYPL", "TSLA", "V", "WMT",
+]);
 
 // ─── ML service helpers: remote first, then local fallback (local skipped on Render) ───
 const ML_TIMEOUT  = 30000;  // 30 s — generous for Render cold-start
@@ -69,6 +80,18 @@ function buildBasicAnalysis(symbol, priceData, lang) {
   return lang === "ta"
     ? `${symbol} - அடிப்படை தகவல்:\n💰 தற்போதைய விலை: ${currency}${priceData.price}\n📌 சந்தை: ${priceData.currency === "INR" ? "NSE (India)" : "US Stock"}\n\n⚠️ விரிவான பகுப்பாய்வுக்கு ML சேவை தேவை. உள்ளூர் சேவையகம் இயங்குகிறதா என சரிபார்க்கவும்.`
     : `${symbol} - Basic Info:\n💰 Current Price: ${currency}${priceData.price}\n📌 Market: ${priceData.currency === "INR" ? "NSE (India)" : "US Market"}\n\n⚠️ Full analysis requires the ML service. Run 'python price_api.py' locally for richer data.`;
+}
+
+function normalizeMarketSymbol(rawSymbol) {
+  const normalized = String(rawSymbol || "AAPL").toUpperCase().replace(/_NS$/, ".NS").trim();
+  if (!normalized) return "AAPL";
+  if (normalized.includes(".")) return normalized;
+  if (US_STOCKS.has(normalized)) return normalized;
+  return `${normalized}.NS`;
+}
+
+function isPriceLikeQuery(text) {
+  return /\bprice\b|price of|current price|quote|rate|விலை|ரேட்|vilai|vilaiya|rate sollu/i.test(text);
 }
 
 // =============================
@@ -225,7 +248,6 @@ app.get("/", async (req, res) => {
     <span class="sug-chip" onclick="send('TSLA ku epdi irukku?')">TSLA ku epdi irukku?</span>
     <span class="sug-chip" onclick="send('RELIANCE price')">RELIANCE price</span>
     <span class="sug-chip" onclick="send('compare AAPL vs GOOGL')">compare AAPL vs GOOGL</span>
-    <span class="sug-chip" onclick="send('available models')">available models</span>
   </div>
 
   <div class="input-area">
@@ -523,22 +545,34 @@ app.get("/api/stocks", async (req, res) => {
 });
 
 // =================================================
-// PREDICT PROXY (direct pass-through to ML service)
+// PREDICT PROXY (direct pass-through to ML service with rate limiting)
 // =================================================
-app.post("/predict", async (req, res) => {
+app.post("/predict", predictionLimiter, async (req, res) => {
   try {
-    const response = await mlPost('/predict', req.body);
+    const response = await apiQueue.execute(async () => {
+      return await retryWithBackoff(async () => {
+        return await mlPost('/predict', req.body);
+      }, 3);
+    });
     res.json(response.data);
   } catch (error) {
+    const statusCode = error?.response?.status;
+    if (statusCode === 429) {
+      return res.status(429).json({
+        error: "Prediction service rate limited. Please wait a moment and try again."
+      });
+    }
     console.error("ML /predict error:", error.message);
-    res.status(500).json({ error: "ML API failed — ensure local ML service (ml/app.py) is running" });
+    res.status(500).json({
+      error: "ML API failed — ensure local ML service (ml/app.py) is running"
+    });
   }
 });
 
 // =================================================
 // MAIN CHATBOT API (FINAL WITH NLP)
 // =================================================
-app.post("/api/chatbot", async (req, res) => {
+app.post("/api/chatbot", chatbotLimiter, async (req, res) => {
   // Declare lang here so it is accessible in the catch block
   let lang = 'en';
   try {
@@ -797,7 +831,8 @@ app.post("/api/chatbot", async (req, res) => {
     }
 
     // -----------------------------
-    // STOCK COMPARISON (Enhanced with NLP)
+    // STOCK COMPARISON (Enhanced with NLP & Rate Limiting)
+    // Note: Uses request queue to stagger API calls and avoid 429 errors
     // -----------------------------
     if (detectedIntent === 'compare' || text.match(/compare|comparison|versus|vs/)) {
       const symbols = nlpSymbols;
@@ -811,12 +846,18 @@ app.post("/api/chatbot", async (req, res) => {
       }
 
       try {
-        const response = await mlPost('/compare', {
-          symbols: symbols,
-          period: "1y"
+        // Use request queue with exponential backoff to avoid 429 rate limit errors
+        const result = await apiQueue.execute(async () => {
+          return await retryWithBackoff(async () => {
+            const response = await mlPost('/compare', {
+              symbols: symbols,
+              period: "1y"
+            });
+            return response;
+          }, 3);  // max 3 retries with exponential backoff
         });
 
-        const { comparisons, best_performer_1d, most_volatile } = response.data;
+        const { comparisons, best_performer_1d, most_volatile } = result.data;
         
         let compText = "";
         for (const comp of comparisons) {
@@ -829,10 +870,24 @@ app.post("/api/chatbot", async (req, res) => {
             : `Stock Comparison:${compText}\n\n🏆 Best Performer: ${best_performer_1d}\n⚡ Most Volatile: ${most_volatile}`
         });
       } catch (err) {
+        const statusCode = err?.response?.status;
+        const errorMsg = err?.response?.data?.detail || err.message || "Service temporarily unavailable";
+        
+        // Special handling for rate limit errors
+        if (statusCode === 429) {
+          console.warn('⚠️  Rate limited (429) on compare endpoint. Waiting before retry...');
+          return res.json({
+            reply: lang === "ta"
+              ? `⚠️ மிக அதிக கோரிக்கைகள் இப்போது பெறப்பட்டுள்ளன. சிறிது நேரம் பிறகு முயற்சிக்கவும்.\n💡 குறிப்பு: குறைவான பங்குகளை ஒப்பிட முயற்சிக்கவும் (அதிகபட்சம் 3)`
+              : `⚠️ Too many requests right now. Please try again in a moment.\n💡 Tip: Try comparing fewer stocks at a time (max 3)`
+          });
+        }
+
+        console.error('Compare error:', errorMsg);
         return res.json({
           reply: lang === "ta"
-            ? `ஒப்பீடு தோல்வி: ${err?.response?.data?.detail || err.message}`
-            : `Comparison failed: ${err?.response?.data?.detail || err.message}`
+            ? `ஒப்பீடு தோல்வி: ${errorMsg}`
+            : `Comparison failed: ${errorMsg}`
         });
       }
     }
@@ -933,6 +988,26 @@ app.post("/api/chatbot", async (req, res) => {
     }
 
     // -----------------------------
+    // LLM PROVIDER STATUS QUERY
+    // -----------------------------
+    if (text.match(/\b(gemini|ollama|github\s*models?|llm\s*status|which\s*model|ai\s*model)\b/i)) {
+      try {
+        const status = await getLLMStatus();
+        const primary = status.primary || 'none';
+        const reply = lang === 'ta'
+          ? `🤖 AI சேவை நிலை:\n\n• Gemini: ${status.gemini?.status || 'N/A'}\n• GitHub Models: ${status.githubModels?.status || 'N/A'}\n• Ollama: ${status.ollama?.status || 'N/A'}\n\n✅ தற்போதைய முதன்மை மாடல்: ${primary}`
+          : `🤖 AI Provider Status:\n\n• Gemini: ${status.gemini?.status || 'N/A'}\n• GitHub Models: ${status.githubModels?.status || 'N/A'}\n• Ollama: ${status.ollama?.status || 'N/A'}\n\n✅ Current primary model: ${primary}`;
+        return res.json({ reply });
+      } catch (statusErr) {
+        return res.json({
+          reply: lang === 'ta'
+            ? 'AI சேவை நிலையை பெற முடியவில்லை. பின்னர் முயற்சிக்கவும்.'
+            : 'Could not fetch AI provider status right now. Please try again.'
+        });
+      }
+    }
+
+    // -----------------------------
     // HELP COMMAND (Enhanced)
     // -----------------------------
     if (detectedIntent === 'help' || text.includes("help") || text.includes("what can you do")) {
@@ -1003,41 +1078,43 @@ app.post("/api/chatbot", async (req, res) => {
     }
 
     // -----------------------------
-    // STOCK PRICE QUERY (Enhanced with NLP)
+    // STOCK PRICE QUERY (Detailed)
     // -----------------------------
-    if (detectedIntent === 'price' || text.match(/\bprice\b|price of|current price/)) {
-      const symbol = nlpSymbols[0] || "AAPL";
+    if (detectedIntent === 'price' || isPriceLikeQuery(text)) {
+      const rawSymbol = nlpSymbols[0] || "AAPL";
+      const finalSymbol = normalizeMarketSymbol(rawSymbol);
 
-      // Match the same symbol rules used by /api/price
-      let finalSymbol = symbol;
-      if (
-        !symbol.includes(".") &&
-        !["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "META", "NFLX", "NVDA"].includes(symbol)
-      ) {
-        finalSymbol = symbol + ".NS";
-      }
-
+      // Prefer detailed analytics response; fallback to live price only
       try {
-        const priceInfo = await fetchLivePrice(finalSymbol);
+        const analysisResp = await mlGet(`/analyze/${finalSymbol}`);
+        const a = analysisResp.data;
+        const isIN = String(a.fixed_symbol || finalSymbol).endsWith('.NS');
+        const currency = isIN ? '₹' : '$';
+        const change = Number(a.price_change_pct_1d || 0);
+        const arrow = change >= 0 ? '▲' : '▼';
 
-        if (!priceInfo || typeof priceInfo.price !== "number") {
-          throw new Error("Price not available");
+        return res.json({
+          reply: lang === 'ta'
+            ? `${a.company_name || finalSymbol} (${a.symbol || finalSymbol})\n💰 தற்போதைய விலை: ${currency}${a.current_price}\n${arrow} நாள் மாற்றம்: ${Math.abs(change).toFixed(2)}%\n📈 52-வார உயர்வு: ${currency}${a.high_52w}\n📉 52-வார குறைவு: ${currency}${a.low_52w}\n⚡ மாறுபாடு: ${a.volatility}%\n⚠️ இது நிதி ஆலோசனை அல்ல.`
+            : `${a.company_name || finalSymbol} (${a.symbol || finalSymbol})\n💰 Current Price: ${currency}${a.current_price}\n${arrow} Day Change: ${Math.abs(change).toFixed(2)}%\n📈 52w High: ${currency}${a.high_52w}\n📉 52w Low: ${currency}${a.low_52w}\n⚡ Volatility: ${a.volatility}%\n⚠️ Not financial advice.`
+        });
+      } catch (_) {
+        try {
+          const priceInfo = await fetchLivePrice(finalSymbol);
+          if (!priceInfo || typeof priceInfo.price !== 'number') throw new Error('Price not available');
+          const currency = priceInfo.currency === 'INR' ? '₹' : '$';
+          return res.json({
+            reply: lang === 'ta'
+              ? `${finalSymbol} இன் தற்போதைய விலை ${currency}${priceInfo.price}`
+              : `The current price of ${finalSymbol} is ${currency}${priceInfo.price}`
+          });
+        } catch (_) {
+          return res.json({
+            reply: lang === 'ta'
+              ? `${finalSymbol} விலை பெற முடியவில்லை. சந்தை மூடப்பட்டிருக்கலாம் அல்லது சின்னம் தவறானது.`
+              : `Could not fetch price for ${finalSymbol}. Market may be closed or symbol is invalid.`
+          });
         }
-
-        const currency = priceInfo.currency === "INR" ? "₹" : "$";
-        return res.json({
-          reply:
-            lang === "ta"
-              ? `${symbol} இன் தற்போதைய விலை ${currency}${priceInfo.price}`
-              : `The current price of ${symbol} is ${currency}${priceInfo.price}`
-        });
-      } catch (priceErr) {
-        return res.json({
-          reply:
-            lang === "ta"
-              ? `${symbol} விலை பெற முடியவில்லை. சந்தை மூடப்பட்டிருக்கலாம் அல்லது சின்னம் தவறானது.`
-              : `Could not fetch price for ${symbol}. Market may be closed or symbol is invalid.`
-        });
       }
     }
 
@@ -1070,7 +1147,21 @@ app.post("/api/chatbot", async (req, res) => {
     }
 
     // =============================
-    // LLM FALLBACK (Gemini → Ollama) for complex queries
+    // STOCK-FIRST FALLBACK
+    // If user asked about a symbol but intent was ambiguous, return live price/basic info
+    // =============================
+    if (nlpSymbols.length > 0) {
+      const fallbackSymbol = normalizeMarketSymbol(nlpSymbols[0]);
+      const priceData = await fetchLivePrice(fallbackSymbol);
+      if (priceData?.price) {
+        const fallbackReply = buildBasicAnalysis(fallbackSymbol, priceData, lang);
+        await saveMessage({ userId, role: 'bot', message: fallbackReply, language: lang, intent: 'stock_fallback', stockSymbol: fallbackSymbol }).catch(() => {});
+        return res.json({ reply: fallbackReply });
+      }
+    }
+
+    // =============================
+    // LLM FALLBACK (Gemini → GitHub Models → Ollama) for complex queries
     // =============================
     const isStructuredIntent = ['predict', 'analyze', 'train', 'compare', 'price', 'buy_sell'].includes(detectedIntent);
     const isHelpOnly         = ['help'].includes(detectedIntent);
