@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 
 // ── Backend URL ─────────────────────────────────────────────────────
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://final-year-backend-1.onrender.com';
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://api.fintechiq.me';
 
 // ── Persistent user ID (survives page refresh) ───────────────────────
 const USER_ID = (() => {
@@ -90,6 +90,7 @@ const useChatLogic = (uiLang) => {
   const [input,       setInput]       = useState('');
   const [isTyping,    setIsTyping]    = useState(false);
   const [suggestions, setSuggestions] = useState(DEFAULT_SUGGESTIONS[uiLang]);
+  const lastSendTimeRef = useRef(0);  // Track last request time for throttling
 
   // Reset suggestions on language change
   useEffect(() => {
@@ -99,6 +100,15 @@ const useChatLogic = (uiLang) => {
   const sendMessage = useCallback(async (msgText) => {
     const text = (msgText || input).trim();
     if (!text || isTyping) return;
+
+    // ── Throttle: Prevent requests faster than 500ms apart ──────────────
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastSendTimeRef.current;
+    if (timeSinceLastRequest < 500) {
+      // Silently ignore rapid-fire requests
+      return;
+    }
+    lastSendTimeRef.current = now;
 
     setMessages(p => [...p, { sender: 'user', text, time: new Date() }]);
     if (!msgText) setInput('');
@@ -124,12 +134,23 @@ const useChatLogic = (uiLang) => {
       if (!navigator.onLine) {
         botText = t('offline', uiLang);
       } else if (err.response) {
+        const status = err.response.status;
         const serverMsg = err.response?.data?.reply || err.response?.data?.error;
-        botText = serverMsg || (uiLang === 'en'
-          ? `⚠️ Server error (${err.response.status}). Please try again.`
-          : uiLang === 'ta'
-            ? `⚠️ சர்வர் பிழை (${err.response.status}). மீண்டும் முயற்சிக்கவும்.`
-            : `⚠️ Server error (${err.response.status}) aachu da. Try pannu.`);
+        
+        // Handle rate limit error with user-friendly message
+        if (status === 429) {
+          botText = uiLang === 'en'
+            ? `⚠️ Rate limit reached. Too many requests. Please wait a moment before sending another message.`
+            : uiLang === 'ta'
+              ? `⚠️ மிக அதிக கோரிக்கைகள். சிறிது நேரம் பிறகு முயற்சிக்கவும்.`
+              : `⚠️ Aiyya, neenga kaduppukka spam ah irukku da. Wait pannu.`;
+        } else {
+          botText = serverMsg || (uiLang === 'en'
+            ? `⚠️ Server error (${status}). Please try again.`
+            : uiLang === 'ta'
+              ? `⚠️ சர்வர் பிழை (${status}). மீண்டும் முயற்சிக்கவும்.`
+              : `⚠️ Server error (${status}) aachu da. Try pannu.`);
+        }
       } else if (err.request) {
         botText = t('serverDown', uiLang);
       } else {

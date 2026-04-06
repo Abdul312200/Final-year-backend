@@ -61,7 +61,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 
-const API_URL = import.meta.env.VITE_API_URL || "https://final-year-backend-1.onrender.com";
+const API_URL = import.meta.env.VITE_API_URL || "https://api.fintechiq.me";
 
 /* ─── Mock prices (used when backend is offline) ─── */
 const MOCK_PRICES = {
