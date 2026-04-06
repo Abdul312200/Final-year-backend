@@ -18,6 +18,8 @@ const STOCK_KEYWORDS = [
   'aapl','tsla','msft','googl','amzn','meta','nvda','nflx','amd','intc',
   'reliance','tcs','infosys','hdfc','icici','bajaj','wipro','hcl','axis',
   'lstm','gru','arima','xgboost','prophet','model','train','training',
+  // LLM provider/status terms (chatbot capability queries)
+  'gemini','ollama','github models','github model','github','llm','ai model','model status','provider status','api model',
   'candle','candlestick','rsi','macd','bollinger','ema','sma','moving average',
   'support','resistance','breakout','pullback','momentum','swing',
   'sector','industry','cap','large cap','mid cap','small cap','market cap',

@@ -1043,7 +1043,12 @@ app.post("/api/chatbot", chatbotLimiter, async (req, res) => {
 
 🤖 கிடைக்கும் மாடல்கள்:
 • LSTM, GRU, CNN-LSTM, ANN
-• ARIMA, XGBoost, Prophet`
+• ARIMA, XGBoost, Prophet
+
+🧠 AI வழங்குநர் நிலை:
+• "gemini status"
+• "ollama status"
+• "github models status"`
             : `I can help you with:
 
 📈 Stock Predictions:
@@ -1073,7 +1078,12 @@ app.post("/api/chatbot", chatbotLimiter, async (req, res) => {
 
 🤖 Available Models:
 • LSTM, GRU, CNN-LSTM, ANN
-• ARIMA, XGBoost, Prophet`
+• ARIMA, XGBoost, Prophet
+
+🧠 AI Provider Status:
+• "gemini status"
+• "ollama status"
+• "github models status"`
       });
     }
 
