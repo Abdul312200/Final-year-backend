@@ -38,14 +38,14 @@ const UI = {
   welcomeTitle: { en: 'FinTechIQ AI Assistant',
                   ta: 'FinTechIQ AI உதவியாளர்',
                   tl: 'FinTechIQ AI Assistant da!' },
-  welcomeText:  { en: 'Ask me to predict stocks, analyze trends, compare companies, or get live prices!',
-                  ta: 'பங்கு கணிப்பு, பகுப்பாய்வு, ஒப்பீடு அல்லது நேரடி விலை கேளுங்கள்!',
-                  tl: 'Stock predict pannu, analyze pannu, compare pannu, illa price kelu da!' },
+  welcomeText:  { en: 'Ask me about NSE/BSE stocks, Nifty50, Sensex, SIP, IPO, mutual funds, or F&O basics!',
+                  ta: 'NSE/BSE பங்குகள், Nifty50, Sensex, SIP, IPO, Mutual Fund பற்றி கேளுங்கள்!',
+                  tl: 'NSE/BSE stocks, Nifty, SIP, IPO pathi kelu da! Tanglish-la pesalam!' },
 
   // Input placeholder
-  placeholder:  { en: 'Ask about stocks, predict AAPL, compare TSLA vs NVDA…',
-                  ta: 'பங்குகள் பற்றி கேளுங்கள்…',
-                  tl: 'Stock pathi kelu, AAPL predict sollu, TSLA vs NVDA compare pannu…' },
+  placeholder:  { en: 'Ask about NSE/BSE stocks, Nifty, SIP, IPO…',
+                  ta: 'NSE/BSE பங்குகள், Nifty, SIP பற்றி கேளுங்கள்…',
+                  tl: 'Nifty enna achu, RELIANCE price, TCS analyze sollu…' },
 
   // Typing indicator
   typing:       { en: 'typing…',                ta: 'தட்டச்சு…',           tl: 'type pannurathu…' },
@@ -72,9 +72,9 @@ const t = (key, lang) => UI[key]?.[lang] ?? UI[key]?.en ?? key;
 
 // ── Default suggestions per language ────────────────────────────────
 const DEFAULT_SUGGESTIONS = {
-  en: ['predict AAPL', 'analyze TSLA', 'compare AAPL vs MSFT', 'gold price', 'what stocks can you predict?'],
-  ta: ['AAPL கணிப்பு', 'TSLA பகுப்பாய்வு', 'தங்க விலை', 'RELIANCE விலை', 'உதவி'],
-  tl: ['AAPL predict sollu', 'TSLA epdi irukku?', 'gold price sollu', 'AAPL vs TSLA compare pannu', 'RELIANCE price sollu'],
+  en: ['predict RELIANCE', 'analyze TCS', 'compare INFY vs TCS', 'Nifty today', 'what is SIP?'],
+  ta: ['RELIANCE கணிப்பு', 'TCS பகுப்பாய்வு', 'Nifty இன்று எப்படி?', 'SIP என்னன்னு சொல்லு', 'HDFCBANK விலை'],
+  tl: ['RELIANCE predict sollu', 'TCS epdi irukku?', 'Nifty today enna achu?', 'SIP pathi sollu', 'INFY vs TCS compare pannu'],
 };
 
 // tryLocalResponse removed — all predict/analyze/compare queries now go straight
