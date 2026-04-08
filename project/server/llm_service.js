@@ -1,7 +1,7 @@
 /**
- * LLM Service — Gemini Primary + GitHub Models + Ollama Fallback
- * Primary:   Google Gemini 1.5 Flash (free tier)
- * Secondary: GitHub Models (OpenAI-compatible endpoint)
+ * LLM Service — Gemini Primary + Groq Fallback + Ollama Local Fallback
+ * Primary:   Google Gemini 2.0 Flash (free tier: 1,500 req/day)
+ * Secondary: Groq LLaMA 3.1 (free tier: 14,400 req/day)
  * Fallback:  Ollama local LLM (llama3.2 / mistral)
  *
  * ⚠️ Set fresh API keys in .env (never commit raw keys).
@@ -13,35 +13,72 @@ import axios from 'axios';
 
 // ─── Configuration ──────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL   = process.env.GEMINI_MODEL   || 'gemini-1.5-flash';
-const GITHUB_MODELS_TOKEN = process.env.GITHUB_MODELS_TOKEN || process.env.GITHUB_TOKEN || '';
-const GITHUB_MODELS_ENDPOINT = (process.env.GITHUB_MODELS_ENDPOINT || 'https://models.inference.ai.azure.com').replace(/\/$/, '');
-const GITHUB_MODELS_MODEL = process.env.GITHUB_MODELS_MODEL || 'gpt-4.1-mini';
+const GEMINI_MODEL   = process.env.GEMINI_MODEL   || 'gemini-2.0-flash';
+const GROQ_API_KEY   = process.env.GROQ_API_KEY   || '';
+const GROQ_MODEL     = process.env.GROQ_MODEL     || 'llama-3.1-8b-instant';
 const OLLAMA_HOST    = process.env.OLLAMA_HOST    || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL   || 'llama3.2';
 
 // ─── System Prompts ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT_EN = `You are FinTechIQ — a helpful general-purpose AI assistant with strong stock-market expertise.
+const SYSTEM_PROMPT_EN = `You are StockBot — an expert stock market assistant for Indian markets (NSE & BSE).
+You speak Tamil, English, and Tanglish (Tamil-English mix).
 
-Rules:
-1. Answer the user's question directly and clearly.
-2. Support English, Tamil, and Tanglish. If the user writes in Tamil or Tanglish, reply in Tamil.
-3. When the question is about stocks, trading, investing, or finance, give accurate stock-specific help and use our live market tools when needed.
-4. For live prices or analysis, do not invent numbers.
-5. For buy/sell advice always add: ⚠️ "This is not financial advice. Consult a SEBI-registered advisor."
-6. Keep answers concise, practical, and easy to scan with bullet points when useful.
-7. If the user asks for a tool action, mention the right command such as: predict AAPL, analyze TCS.NS, compare AAPL vs TSLA, price MSFT.`;
+LANGUAGE RULES:
+- Detect the user's language from their message automatically.
+- If the user writes in Tamil: reply fully in Tamil (use Tamil script).
+- If the user writes in English: reply in clear English.
+- If the user writes in Tanglish (mixed): reply in Tanglish matching their style.
+- Never ask "which language do you prefer?" — just detect and respond.
 
-const SYSTEM_PROMPT_TA = `நீங்கள் FinTechIQ — உதவிகரமான பொதுப் பயன்பாட்டு AI உதவியாளர். பங்கு சந்தை, முதலீடு, நிதி விஷயங்களில் அதிக திறமை கொண்டவர்.
+TANGLISH EXAMPLES you must understand and reply to:
+- "Nifty today enna achu?" → answer in Tanglish
+- "TCS share price ku enna happening?" → answer in Tanglish
+- "Market crash aaguthaaa?" → answer in Tanglish
+- "இன்று சந்தை எப்படி இருக்கு?" → answer in Tamil
 
-விதிகள்:
-1. பயனரின் கேள்விக்கு நேரடியாகவும் தெளிவாகவும் பதில் சொல்லுங்கள்.
-2. தமிழ், ஆங்கிலம், Tanglish ஆதரிக்கவும். Tanglish அல்லது தமிழ் வந்தால் தமிழில் பதில் சொல்லுங்கள்.
-3. பங்குகள் / முதலீடு / நிதி கேள்விகள் வந்தால் சரியான stock-specific உதவியை கொடுக்கவும். தேவைப்பட்டால் live tools பயன்படுத்தவும்.
-4. நேரடி விலை அல்லது பகுப்பாய்வுக்கு தரவை கற்பனை செய்யாதீர்கள்.
-5. வாங்க/விற்க ஆலோசனைக்கு எப்போதும் சேர்க்கவும்: ⚠️ "இது நிதி ஆலோசனை அல்ல. SEBI பதிவுசெய்யப்பட்ட ஆலோசகரை அணுகவும்."
-6. பதில்கள் சுருக்கமாக, தெளிவாக, bullet points உடன் இருக்கலாம்.
-7. தேவையான நேரத்தில் சரியான command-ஐ சொல்லுங்கள்: predict AAPL, analyze TCS.NS, compare AAPL vs TSLA, price MSFT.`;
+STOCK DOMAIN RULES:
+- Focus ONLY on: NSE/BSE stocks, mutual funds, SIP, IPO, Nifty50, Sensex, F&O basics.
+- Always add: "இது financial advice இல்ல / This is not financial advice."
+- For live prices: say "Live data-ku NSE (https://www.nseindia.com) ya BSE (https://www.bseindia.com) check pannunga".
+- Explain concepts simply — assume the user is a retail investor, not a trader.
+
+STRICT RULES:
+- Do NOT answer non-stock topics.
+- Do NOT give specific buy/sell recommendations.
+- ALWAYS add disclaimer at end of any analysis.
+
+KNOWLEDGE BASE (always know these):
+- NSE live: https://www.nseindia.com
+- BSE live: https://www.bseindia.com
+- Screener: https://www.screener.in
+- Ticker Tape: https://www.tickertape.in`;
+
+const SYSTEM_PROMPT_TA = `நீங்கள் StockBot — இந்திய பங்கு சந்தை (NSE & BSE) நிபுணர் AI உதவியாளர்.
+தமிழ், ஆங்கிலம், Tanglish ஆகிய மூன்று மொழிகளில் பேசுவீர்கள்.
+
+மொழி விதிகள்:
+- பயனர் எழுதும் மொழியை தானாக கண்டறியவும்.
+- தமிழில் எழுதினால்: முழுவதும் தமிழில் பதில் சொல்லுங்கள்.
+- ஆங்கிலத்தில் எழுதினால்: தெளிவான ஆங்கிலத்தில் பதில் சொல்லுங்கள்.
+- Tanglish-ல் எழுதினால்: அதே பாணியில் Tanglish-ல் பதில் சொல்லுங்கள்.
+- "எந்த மொழி வேண்டும்?" என ஒருபோதும் கேட்காதீர்கள்.
+
+பங்கு சந்தை விதிகள்:
+- NSE/BSE பங்குகள், Mutual Fund, SIP, IPO, Nifty50, Sensex, F&O அடிப்படைகள் மட்டுமே பதில் சொல்லுங்கள்.
+- எப்போதும் சேர்க்கவும்: "இது financial advice இல்ல / This is not financial advice."
+- நேரடி விலைக்கு: "Live data-ku NSE / BSE check pannunga" என சொல்லுங்கள்.
+- பயனர் ஒரு சாதாரண முதலீட்டாளர் என்று கருதுங்கள்.
+
+கடுமையான விதிகள்:
+- பங்கு சந்தை தொடர்பில்லாத கேள்விகளுக்கு பதில் சொல்லாதீர்கள்.
+- குறிப்பிட்ட வாங்கு/விற்கு பரிந்துரை கொடுக்காதீர்கள்.
+- எந்த பகுப்பாய்வின் இறுதியிலும் disclaimer சேர்க்கவும்.
+
+முக்கியமான இணையதளங்கள்:
+- NSE: https://www.nseindia.com
+- BSE: https://www.bseindia.com
+- Screener: https://www.screener.in
+- Ticker Tape: https://www.tickertape.in`;
 
 // ─── Gemini Client ────────────────────────────────────────────────────────────────
 let geminiClient = null;
@@ -103,7 +140,7 @@ async function askGemini({ userMessage, conversationHistory = [], lang = 'en' })
   } catch (err) {
     const msg = err?.message || String(err);
     if (msg.includes('quota') || msg.includes('429')) {
-      console.warn('⚠️  Gemini quota exceeded — falling back to Ollama');
+      console.warn('⚠️  Gemini quota exceeded — falling back to Groq');
       return { success: false, reason: 'quota_exceeded', text: null };
     }
     console.error('Gemini error:', msg);
@@ -111,9 +148,9 @@ async function askGemini({ userMessage, conversationHistory = [], lang = 'en' })
   }
 }
 
-async function askGitHubModels({ userMessage, conversationHistory = [], lang = 'en' }) {
-  if (!GITHUB_MODELS_TOKEN || GITHUB_MODELS_TOKEN === 'YOUR_NEW_GITHUB_TOKEN_HERE') {
-    return { success: false, reason: 'github_models_not_configured', text: null };
+async function askGroq({ userMessage, conversationHistory = [], lang = 'en' }) {
+  if (!GROQ_API_KEY || GROQ_API_KEY === 'YOUR_GROQ_API_KEY_HERE') {
+    return { success: false, reason: 'groq_not_configured', text: null };
   }
 
   const systemPrompt = lang === 'ta' ? SYSTEM_PROMPT_TA : SYSTEM_PROMPT_EN;
@@ -125,9 +162,9 @@ async function askGitHubModels({ userMessage, conversationHistory = [], lang = '
 
   try {
     const response = await axios.post(
-      `${GITHUB_MODELS_ENDPOINT}/chat/completions`,
+      'https://api.groq.com/openai/v1/chat/completions',
       {
-        model: GITHUB_MODELS_MODEL,
+        model: GROQ_MODEL,
         messages,
         temperature: 0.4,
         top_p: 0.9,
@@ -135,7 +172,7 @@ async function askGitHubModels({ userMessage, conversationHistory = [], lang = '
       },
       {
         headers: {
-          Authorization: `Bearer ${GITHUB_MODELS_TOKEN}`,
+          Authorization: `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json',
         },
         timeout: 20000,
@@ -144,22 +181,22 @@ async function askGitHubModels({ userMessage, conversationHistory = [], lang = '
 
     const text = response.data?.choices?.[0]?.message?.content;
     if (!text) {
-      return { success: false, reason: 'github_models_empty_response', text: null };
+      return { success: false, reason: 'groq_empty_response', text: null };
     }
 
-    return { success: true, text, model: GITHUB_MODELS_MODEL, source: 'github-models' };
+    return { success: true, text, model: GROQ_MODEL, source: 'groq' };
   } catch (err) {
     const status = err?.response?.status;
     const msg = err?.response?.data?.error?.message || err?.message || String(err);
     if (status === 429 || msg.toLowerCase().includes('rate')) {
-      console.warn('⚠️  GitHub Models rate limited — falling back to Ollama');
-      return { success: false, reason: 'github_models_rate_limited', text: null };
+      console.warn('⚠️  Groq rate limited — falling back to Ollama');
+      return { success: false, reason: 'groq_rate_limited', text: null };
     }
     if (status === 401 || status === 403) {
-      console.warn('⚠️  GitHub Models auth failed — check token permissions');
-      return { success: false, reason: 'github_models_auth_failed', text: null };
+      console.warn('⚠️  Groq auth failed — check GROQ_API_KEY');
+      return { success: false, reason: 'groq_auth_failed', text: null };
     }
-    console.warn('GitHub Models error:', msg);
+    console.warn('Groq error:', msg);
     return { success: false, reason: msg, text: null };
   }
 }
@@ -265,16 +302,16 @@ function getStaticFallbackReply(userMessage, lang = 'en') {
     : `📊 FinTechIQ AI Assistant here!\n\nAI service is temporarily unavailable. Use direct commands:\n\n📈 Prediction: "predict AAPL"\n📊 Analysis: "analyze TCS"\n💰 Price: "RELIANCE price"\n⚖️ Compare: "compare AAPL vs MSFT"\n📋 Models: "available models"\n\n⚠️ Not financial advice. Consult a SEBI-registered advisor.`;
 }
 
-// ─── Main Entry — Gemini, then GitHub Models, then Ollama, then static ──────────
+// ─── Main Entry — Gemini → Groq → Ollama → static ──────────────────────────────
 async function askLLM({ userMessage, conversationHistory = [], lang = 'en' }) {
   const geminiResult = await askGemini({ userMessage, conversationHistory, lang });
   if (geminiResult.success) return geminiResult;
 
-  console.log(`Gemini failed (${geminiResult.reason}), trying GitHub Models...`);
-  const githubResult = await askGitHubModels({ userMessage, conversationHistory, lang });
-  if (githubResult.success) return githubResult;
+  console.log(`Gemini failed (${geminiResult.reason}), trying Groq...`);
+  const groqResult = await askGroq({ userMessage, conversationHistory, lang });
+  if (groqResult.success) return groqResult;
 
-  console.log(`GitHub Models failed (${githubResult.reason}), trying Ollama...`);
+  console.log(`Groq failed (${groqResult.reason}), trying Ollama...`);
   const ollamaResult = await askOllama({ userMessage, conversationHistory, lang });
   if (ollamaResult.success) return ollamaResult;
 
@@ -285,21 +322,20 @@ async function askLLM({ userMessage, conversationHistory = [], lang = 'en' }) {
 }
 
 async function getLLMStatus() {
-  const geminiOk   = !!(GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_NEW_GEMINI_KEY_HERE');
-  const githubOk   = !!(GITHUB_MODELS_TOKEN && GITHUB_MODELS_TOKEN !== 'YOUR_NEW_GITHUB_TOKEN_HERE');
-  const ollamaOk   = await isOllamaAvailable();
+  const geminiOk = !!(GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_NEW_GEMINI_KEY_HERE');
+  const groqOk   = !!(GROQ_API_KEY && GROQ_API_KEY !== 'YOUR_GROQ_API_KEY_HERE');
+  const ollamaOk = await isOllamaAvailable();
   const models     = ollamaOk ? await listOllamaModels() : [];
   const bestOllama = ollamaOk ? await getBestOllamaModel() : null;
   return {
     gemini: { available: geminiOk, model: GEMINI_MODEL, status: geminiOk ? '✅ Configured' : '⚠️  Key not set — add GEMINI_API_KEY to .env' },
-    githubModels: {
-      available: githubOk,
-      model: GITHUB_MODELS_MODEL,
-      endpoint: GITHUB_MODELS_ENDPOINT,
-      status: githubOk ? '✅ Configured' : '⚠️  Token not set — add GITHUB_MODELS_TOKEN to .env',
+    groq: {
+      available: groqOk,
+      model: GROQ_MODEL,
+      status: groqOk ? '✅ Configured' : '⚠️  Key not set — add GROQ_API_KEY to .env',
     },
     ollama: { available: ollamaOk, models, activeModel: bestOllama, status: ollamaOk ? `✅ Running (${models.length} model(s))` : '⚠️  Not running — run: ollama serve', installGuide: 'https://ollama.ai' },
-    primary: geminiOk ? 'gemini' : githubOk ? 'github-models' : ollamaOk ? 'ollama' : 'none',
+    primary: geminiOk ? 'gemini' : groqOk ? 'groq' : ollamaOk ? 'ollama' : 'none',
   };
 }
 
@@ -309,7 +345,7 @@ initGemini();
 export {
   askLLM,
   askGemini,
-  askGitHubModels,
+  askGroq,
   askOllama,
   isOllamaAvailable,
   listOllamaModels,

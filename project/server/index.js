@@ -204,18 +204,18 @@ app.get("/", async (req, res) => {
     <div class="s-row"><span>Backend</span><span class="ok">✅ :10000</span></div>
     <div class="s-row"><span>ML Service</span><span class="ok">✅ :8000</span></div>
     <div class="s-row"><span>Gemini LLM</span><span class="${llmStatus.gemini.available ? 'ok' : 'warn'}">${llmStatus.gemini.status}</span></div>
-    <div class="s-row"><span>GitHub Models</span><span class="${llmStatus.githubModels?.available ? 'ok' : 'warn'}">${llmStatus.githubModels?.status || '⚠️  Not configured'}</span></div>
+    <div class="s-row"><span>Groq (LLaMA 3.1)</span><span class="${llmStatus.groq?.available ? 'ok' : 'warn'}">${llmStatus.groq?.status || '⚠️  Not configured'}</span></div>
     <div class="s-row"><span>Ollama</span><span class="${llmStatus.ollama.available ? 'ok' : 'warn'}">${llmStatus.ollama.status}</span></div>
   </div>
 
   <div class="section-label">Quick Actions</div>
   <div class="quick-btns">
     <button class="qbtn" onclick="send('What stocks can you predict?')">📋 Available Models</button>
-    <button class="qbtn" onclick="send('predict AAPL')">🔮 Predict AAPL</button>
-    <button class="qbtn" onclick="send('analyze TSLA')">📊 Analyze TSLA</button>
-    <button class="qbtn" onclick="send('compare AAPL vs MSFT')">⚖️ Compare Stocks</button>
-    <button class="qbtn" onclick="send('AAPL price')">💰 Live Price</button>
-    <button class="qbtn" onclick="send('help')">❓ Help</button>
+    <button class="qbtn" onclick="send('predict RELIANCE')">🔮 Predict RELIANCE</button>
+    <button class="qbtn" onclick="send('analyze TCS')">📊 Analyze TCS</button>
+    <button class="qbtn" onclick="send('compare INFY vs TCS')">⚖️ Compare Stocks</button>
+    <button class="qbtn" onclick="send('Nifty today enna achu?')">📈 Nifty Today</button>
+    <button class="qbtn" onclick="send('SIP pathi sollu')">💡 SIP Info</button>
   </div>
 
   <div class="section-label">API Endpoints</div>
@@ -238,21 +238,21 @@ app.get("/", async (req, res) => {
 
   <div class="messages" id="messages">
     <div class="welcome">
-      <h2>📈 Welcome to FinTechIQ</h2>
-      <p>Ask me to predict stock prices, analyze trends, compare stocks,<br>or get live prices — in English, Tamil, or Tanglish!</p>
+      <h2>📈 Welcome to FinTechIQ StockBot</h2>
+      <p>Ask me about NSE/BSE stocks, Nifty50, Sensex, SIP, IPO —<br>in English, Tamil, or Tanglish!</p>
     </div>
   </div>
 
   <div class="suggestions" id="suggestions">
-    <span class="sug-chip" onclick="send('predict NVDA')">predict NVDA</span>
-    <span class="sug-chip" onclick="send('TSLA ku epdi irukku?')">TSLA ku epdi irukku?</span>
-    <span class="sug-chip" onclick="send('RELIANCE price')">RELIANCE price</span>
-    <span class="sug-chip" onclick="send('compare AAPL vs GOOGL')">compare AAPL vs GOOGL</span>
+    <span class="sug-chip" onclick="send('predict RELIANCE')">predict RELIANCE</span>
+    <span class="sug-chip" onclick="send('Nifty today enna achu?')">Nifty today enna achu?</span>
+    <span class="sug-chip" onclick="send('TCS pathi sollu')">TCS pathi sollu</span>
+    <span class="sug-chip" onclick="send('SIP என்னன்னு சொல்லு')">SIP என்னன்னு சொல்லு</span>
   </div>
 
   <div class="input-area">
     <div class="input-row">
-      <textarea id="inp" rows="1" placeholder="Ask about stocks… 'predict AAPL', 'TSLA epdi irukku?'" onkeydown="onKey(event)" oninput="resize(this)"></textarea>
+      <textarea id="inp" rows="1" placeholder="Ask about NSE/BSE stocks… 'predict RELIANCE', 'Nifty today enna achu?'" onkeydown="onKey(event)" oninput="resize(this)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendMsg()" title="Send">
         <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
       </button>
