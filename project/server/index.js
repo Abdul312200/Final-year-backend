@@ -210,11 +210,6 @@ app.get("/", async (req, res) => {
 
   <div class="section-label">Quick Actions</div>
   <div class="quick-btns">
-    <button class="qbtn" onclick="send('What stocks can you predict?')">📋 Available Models</button>
-    <button class="qbtn" onclick="send('predict RELIANCE')">🔮 Predict RELIANCE</button>
-    <button class="qbtn" onclick="send('analyze TCS')">📊 Analyze TCS</button>
-    <button class="qbtn" onclick="send('compare INFY vs TCS')">⚖️ Compare Stocks</button>
-    <button class="qbtn" onclick="send('Nifty today enna achu?')">📈 Nifty Today</button>
     <button class="qbtn" onclick="send('SIP pathi sollu')">💡 SIP Info</button>
   </div>
 
