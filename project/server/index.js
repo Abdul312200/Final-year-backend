@@ -327,7 +327,7 @@ app.get("/", async (req, res) => {
     addTyping();
 
     try {
-      const res = await fetch('/api/chatbot', {
+      const res = await fetch('https://api.fintechiq.me/api/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, userId: USER_ID })
